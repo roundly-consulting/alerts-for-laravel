@@ -7,7 +7,9 @@ namespace RoundlyConsulting\Alerts\Traits;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use RoundlyConsulting\Alerts\Alert;
+use RoundlyConsulting\Alerts\DataTransferObjects\ScheduleHealthCheckData;
 use RoundlyConsulting\Alerts\HealthCheck;
+use RoundlyConsulting\Alerts\Support\PendingScheduledCheck;
 
 /**
  * @mixin Model
@@ -55,5 +57,27 @@ trait UsesHealthChecks
             'decay_minutes' => $decayMinutes,
             'meta' => $meta,
         ]);
+    }
+
+    /**
+     * Attach a scheduled health check from a DTO.
+     */
+    public function monitor(ScheduleHealthCheckData $data): HealthCheck
+    {
+        return $this->createHealthCheck(
+            healthCheckKey: $data->key(),
+            frequency: $data->cronFrequency(),
+            maxAttempts: $data->maxAttempts,
+            decayMinutes: $data->decayMinutes,
+            meta: $data->meta,
+        );
+    }
+
+    /**
+     * Fluently attach a scheduled health check by its Check class-string or key.
+     */
+    public function monitorCheck(string $check): PendingScheduledCheck
+    {
+        return new PendingScheduledCheck($this, $check);
     }
 }
