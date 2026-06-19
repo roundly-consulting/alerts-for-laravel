@@ -22,6 +22,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Registered Checks
+    |--------------------------------------------------------------------------
+    |
+    | Check classes (or instances) registered globally on boot. Add the built-in
+    | checks or your own here, or register them at runtime via Health::check().
+    |
+    */
+
+    'checks' => [
+        // RoundlyConsulting\Alerts\Checks\DatabaseCheck::class,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Alert Model
     |--------------------------------------------------------------------------
     |
@@ -43,5 +57,37 @@ return [
     */
 
     'job' => HealthCheckJob::class,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Scheduling
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, the package auto-registers the `alerts:perform-health-checks`
+    | command on Laravel's scheduler at the given frequency, so install-to-working
+    | is a single config line. Disable it to wire the command yourself.
+    |
+    */
+
+    'schedule' => [
+        'enabled' => env('ALERTS_SCHEDULE', true),
+        'frequency' => env('ALERTS_SCHEDULE_FREQUENCY', 'everyMinute'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Status Route
+    |--------------------------------------------------------------------------
+    |
+    | Configuration for the opt-in JSON health endpoint registered via
+    | Health::routes() in the host application's routes file. The endpoint is
+    | never registered automatically.
+    |
+    */
+
+    'route' => [
+        'uri' => env('ALERTS_ROUTE_URI', 'health'),
+        'name' => 'alerts.health',
+    ],
 
 ];
