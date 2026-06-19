@@ -19,8 +19,16 @@
         }
     ],
     "require": {
-        "php": "^8.3|^8.4",
-        "illuminate/contracts": "^12.0|^13.0"
+        "php": "^8.4",
+        "illuminate/bus": "^12.0|^13.0",
+        "illuminate/cache": "^12.0|^13.0",
+        "illuminate/console": "^12.0|^13.0",
+        "illuminate/contracts": "^12.0|^13.0",
+        "illuminate/database": "^12.0|^13.0",
+        "illuminate/http": "^12.0|^13.0",
+        "illuminate/notifications": "^12.0|^13.0",
+        "illuminate/queue": "^12.0|^13.0",
+        "illuminate/support": "^12.0|^13.0"
     },
     "require-dev": {
         "larastan/larastan": "^3.0",

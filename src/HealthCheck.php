@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace RoundlyConsulting\Alerts;
 
 use Closure;
-use Cron\CronExpression;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
@@ -16,6 +15,7 @@ use RoundlyConsulting\Alerts\Exceptions\InvalidNotifiableForHealthCheck;
 use RoundlyConsulting\Alerts\Facades\Health as HealthFacade;
 use RoundlyConsulting\Alerts\Interfaces\HasNotifiablesForAlerts;
 use RoundlyConsulting\Alerts\Jobs\HealthCheckJob;
+use RoundlyConsulting\Alerts\Support\CronSchedule;
 
 /**
  * @property int $id
@@ -76,9 +76,7 @@ final class HealthCheck extends Model
 
     public function isDue(): bool
     {
-        return (new CronExpression($this->frequency))->isDue(
-            currentTime: now(),
-        );
+        return (new CronSchedule($this->frequency))->isDue(now());
     }
 
     public function dispatchHealthCheckJob(): void
