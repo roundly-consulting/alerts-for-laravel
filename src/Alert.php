@@ -4,18 +4,21 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Alerts;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use RoundlyConsulting\Alerts\Database\Factories\AlertFactory;
+use RoundlyConsulting\Alerts\Enums\Status;
 
 /**
  * @property int $id
  * @property string $notifiable_type
  * @property int $notifiable_id
  * @property int $health_check_id
+ * @property Status $status
  * @property string|null $message
  * @property array<string, mixed>|null $meta
  * @property \Carbon\CarbonInterface $triggered_at
@@ -49,6 +52,22 @@ final class Alert extends Model
         return $this->belongsTo(HealthCheck::class);
     }
 
+    /**
+     * @param  Builder<Alert>  $query
+     */
+    public function scopeOpen(Builder $query): void
+    {
+        $query->whereNull('recovered_at');
+    }
+
+    /**
+     * @param  Builder<Alert>  $query
+     */
+    public function scopeRecovered(Builder $query): void
+    {
+        $query->whereNotNull('recovered_at');
+    }
+
     protected static function newFactory(): AlertFactory
     {
         return AlertFactory::new();
@@ -60,6 +79,7 @@ final class Alert extends Model
     protected function casts(): array
     {
         return [
+            'status' => Status::class,
             'triggered_at' => 'datetime',
             'recovered_at' => 'datetime',
             'meta' => 'array',
