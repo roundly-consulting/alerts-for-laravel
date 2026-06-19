@@ -1,0 +1,82 @@
+<?php
+
+declare(strict_types=1);
+
+namespace RoundlyConsulting\Alerts\Actions;
+
+use Illuminate\Database\Eloquent\Model;
+use RoundlyConsulting\Alerts\Alert;
+use RoundlyConsulting\Alerts\Enums\Status;
+use RoundlyConsulting\Alerts\Facades\Health;
+use RoundlyConsulting\Alerts\HealthCheck;
+use RoundlyConsulting\Alerts\Status\CheckStatus;
+use RoundlyConsulting\Alerts\Status\HealthReport;
+
+/**
+ * Builds a current health report from the scheduled HealthCheck rows and their
+ * latest open alerts, optionally scoped to a single notifiable model.
+ */
+final class BuildHealthReportAction
+{
+    public function execute(?Model $notifiable = null): HealthReport
+    {
+        $checks = [];
+
+        $this->healthCheckQuery($notifiable)->get()->each(
+            function (HealthCheck $healthCheck) use (&$checks): void {
+                $alert = $this->openAlert($healthCheck);
+
+                $status = $alert === null ? Status::Ok : $alert->status;
+
+                $checks[] = new CheckStatus(
+                    key: $healthCheck->health_check,
+                    name: $this->name($healthCheck),
+                    status: $status,
+                    lastAlertAt: $alert?->triggered_at,
+                    message: $alert?->message,
+                );
+            },
+        );
+
+        return new HealthReport($checks);
+    }
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Builder<HealthCheck>
+     */
+    private function healthCheckQuery(?Model $notifiable)
+    {
+        /** @var class-string<HealthCheck> $model */
+        $model = config('alerts.health-check', HealthCheck::class);
+
+        $query = $model::query();
+
+        if ($notifiable !== null) {
+            $query->where('notifiable_type', $notifiable->getMorphClass())
+                ->where('notifiable_id', $notifiable->getKey());
+        }
+
+        return $query;
+    }
+
+    private function openAlert(HealthCheck $healthCheck): ?Alert
+    {
+        /** @var class-string<Alert> $model */
+        $model = config('alerts.alert', Alert::class);
+
+        return $model::query()
+            ->where('notifiable_type', $healthCheck->notifiable_type)
+            ->where('notifiable_id', $healthCheck->notifiable_id)
+            ->where('health_check_id', $healthCheck->getKey())
+            ->open()
+            ->latest('triggered_at')
+            ->first();
+    }
+
+    private function name(HealthCheck $healthCheck): string
+    {
+        $check = Health::find($healthCheck->health_check);
+
+        return $check?->name() ?? $healthCheck->health_check;
+    }
+}
