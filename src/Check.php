@@ -15,9 +15,27 @@ abstract class Check
     protected Limit $notificationThrottle;
 
     public function __construct(
-        public readonly ?HealthCheck $healthCheck = null,
+        public ?HealthCheck $healthCheck = null,
     ) {
-        $this->notificationThrottle = $healthCheck instanceof HealthCheck
+        $this->notificationThrottle = $this->resolveNotificationThrottle($healthCheck);
+    }
+
+    /**
+     * Return a copy of this check bound to a persisted HealthCheck row, preserving
+     * any builder configuration on the original instance.
+     */
+    public function withHealthCheck(HealthCheck $healthCheck): static
+    {
+        $clone = clone $this;
+        $clone->healthCheck = $healthCheck;
+        $clone->notificationThrottle = $clone->resolveNotificationThrottle($healthCheck);
+
+        return $clone;
+    }
+
+    protected function resolveNotificationThrottle(?HealthCheck $healthCheck): Limit
+    {
+        return $healthCheck instanceof HealthCheck
             ? Limit::perMinutes(
                 decayMinutes: $healthCheck->decay_minutes,
                 maxAttempts: $healthCheck->max_attempts,

@@ -67,11 +67,7 @@ final class HealthCheck extends Model
             throw InvalidHealthCheck::notRegistered($this->health_check);
         }
 
-        $className = $check::class;
-
-        return new $className(
-            healthCheck: $this,
-        );
+        return $check->withHealthCheck($this);
     }
 
     public function isDue(): bool

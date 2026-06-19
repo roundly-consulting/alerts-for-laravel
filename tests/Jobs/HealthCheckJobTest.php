@@ -20,7 +20,7 @@ it('does not create alert when health check is ok', function () {
     $healthCheck = createHealthCheckWithNotifiable();
 
     $job = new HealthCheckJob($healthCheck);
-    $job->handle();
+    $this->app->call([$job, 'handle']);
 
     $this->assertDatabaseEmpty('alerts');
 });
@@ -41,7 +41,7 @@ it('creates alert and sends alert notification when health check failed', functi
     $user = User::create(['email' => 'john@doe.com']);
 
     $job = new HealthCheckJob($healthCheck);
-    $job->handle();
+    $this->app->call([$job, 'handle']);
 
     $this->assertDatabaseHas('alerts', [
         'notifiable_type' => Team::class,
@@ -79,7 +79,7 @@ it('does not create alert when not recovered alert already exists', function () 
     ]);
 
     $job = new HealthCheckJob($healthCheck);
-    $job->handle();
+    $this->app->call([$job, 'handle']);
 
     $this->assertDatabaseCount('alerts', 1);
 
@@ -93,11 +93,11 @@ it('captures recovery timestamp of failed health check', function () {
 
     $healthCheck = createHealthCheckWithNotifiable();
     $job = new HealthCheckJob($healthCheck);
-    $job->handle();
+    $this->app->call([$job, 'handle']);
 
     ExampleHealthCheck::$ok = true;
     Carbon::setTestNow('2023-03-22 12:55:15');
-    $job->handle();
+    $this->app->call([$job, 'handle']);
 
     $this->assertDatabaseHas('alerts', [
         'notifiable_type' => Team::class,

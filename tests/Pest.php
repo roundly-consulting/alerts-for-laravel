@@ -11,6 +11,13 @@ use RoundlyConsulting\Alerts\Tests\TestCase;
 
 uses(TestCase::class)->in(__DIR__);
 
+uses()->beforeEach(function (): void {
+    ExampleHealthCheck::$ok = true;
+    ExampleHealthCheck::$status = null;
+    ExampleHealthCheck::$message = 'Everything seems ok';
+    ExampleHealthCheck::$meta = ['checked' => true];
+})->in(__DIR__);
+
 function createHealthCheckWithNotifiable(
     ?object $notifiable = null,
     ?string $healthCheckKey = null,
