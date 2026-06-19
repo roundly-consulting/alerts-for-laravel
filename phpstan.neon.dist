@@ -1,0 +1,13 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    level: 7
+    paths:
+        - src
+        - database
+        - config
+        - tests/Models/Team.php
+        - tests/Models/User.php
+    configDirectories:
+        - config

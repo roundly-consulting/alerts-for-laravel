@@ -1,0 +1,70 @@
+{
+    "name": "roundly-consulting/alerts-for-laravel",
+    "description": "Schedule recurring health checks against any notifiable model and dispatch throttled alert notifications when they fail or recover.",
+    "keywords": [
+        "roundly-consulting",
+        "laravel",
+        "alerts",
+        "health-checks",
+        "monitoring",
+        "notifications"
+    ],
+    "homepage": "https://github.com/roundly-consulting/alerts-for-laravel",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Andrej Mihaliak",
+            "email": "andrej@mihaliak.com",
+            "role": "Developer"
+        }
+    ],
+    "require": {
+        "php": "^8.3|^8.4",
+        "illuminate/contracts": "^12.0|^13.0"
+    },
+    "require-dev": {
+        "larastan/larastan": "^3.0",
+        "laravel/pint": "^1.18",
+        "nunomaduro/collision": "^8.5",
+        "orchestra/testbench": "^10.0|^11.0",
+        "pestphp/pest": "^4.0",
+        "pestphp/pest-plugin-arch": "^4.0",
+        "pestphp/pest-plugin-laravel": "^4.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "RoundlyConsulting\\Alerts\\": "src/",
+            "RoundlyConsulting\\Alerts\\Database\\Factories\\": "database/factories/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "RoundlyConsulting\\Alerts\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "format": "vendor/bin/pint",
+        "analyse": "vendor/bin/phpstan analyse --no-progress",
+        "test": "vendor/bin/pest",
+        "test-coverage": "vendor/bin/pest --coverage --min=90"
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true,
+            "phpstan/extension-installer": true
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "RoundlyConsulting\\Alerts\\AlertsServiceProvider"
+            ],
+            "aliases": {
+                "Health": "RoundlyConsulting\\Alerts\\Facades\\Health"
+            }
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
