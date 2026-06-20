@@ -10,13 +10,16 @@ use RoundlyConsulting\Alerts\Status\CheckStatus;
 
 final class HealthCheckStatus extends Command
 {
-    protected $signature = 'alerts:status';
+    protected $signature = 'alerts:status {--tag= : Only show checks carrying this tag}';
 
     protected $description = 'Show the current health status of every scheduled check';
 
     public function handle(BuildHealthReportAction $action): int
     {
-        $report = $action->execute();
+        $tag = $this->option('tag');
+        $tags = is_string($tag) && $tag !== '' ? [$tag] : null;
+
+        $report = $action->execute(tags: $tags);
 
         if ($report->checks() === []) {
             $this->info('No health checks are scheduled.');
