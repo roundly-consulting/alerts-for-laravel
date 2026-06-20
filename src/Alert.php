@@ -19,6 +19,7 @@ use RoundlyConsulting\Alerts\Enums\Status;
  * @property int $notifiable_id
  * @property int $health_check_id
  * @property Status $status
+ * @property int $escalation_level
  * @property string|null $message
  * @property array<string, mixed>|null $meta
  * @property \Carbon\CarbonInterface $triggered_at
@@ -80,6 +81,7 @@ final class Alert extends Model
     {
         return [
             'status' => Status::class,
+            'escalation_level' => 'int',
             'triggered_at' => 'datetime',
             'recovered_at' => 'datetime',
             'meta' => 'array',

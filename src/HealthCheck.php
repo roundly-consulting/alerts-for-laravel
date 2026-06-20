@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Alerts;
 
+use Carbon\CarbonInterface;
 use Closure;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use RoundlyConsulting\Alerts\Database\Factories\HealthCheckFactory;
@@ -16,6 +18,8 @@ use RoundlyConsulting\Alerts\Facades\Health as HealthFacade;
 use RoundlyConsulting\Alerts\Interfaces\HasNotifiablesForAlerts;
 use RoundlyConsulting\Alerts\Jobs\HealthCheckJob;
 use RoundlyConsulting\Alerts\Support\CronSchedule;
+use RoundlyConsulting\Alerts\Support\MonitorOptions;
+use RoundlyConsulting\Alerts\Support\Percentile;
 
 /**
  * @property int $id
@@ -25,10 +29,13 @@ use RoundlyConsulting\Alerts\Support\CronSchedule;
  * @property string $frequency
  * @property int $max_attempts
  * @property int $decay_minutes
+ * @property int $consecutive_failures
+ * @property int $consecutive_successes
+ * @property list<string>|null $tags
  * @property array<string, mixed>|null $meta
- * @property \Carbon\CarbonInterface|null $created_at
- * @property \Carbon\CarbonInterface|null $updated_at
- * @property \Carbon\CarbonInterface|null $deleted_at
+ * @property CarbonInterface|null $created_at
+ * @property CarbonInterface|null $updated_at
+ * @property CarbonInterface|null $deleted_at
  * @property-read Model|null $notifiable
  */
 final class HealthCheck extends Model
@@ -48,7 +55,33 @@ final class HealthCheck extends Model
         return $this->morphTo();
     }
 
+    /**
+     * @return HasMany<HealthCheckRun, $this>
+     */
+    public function runs(): HasMany
+    {
+        /** @var class-string<HealthCheckRun> $model */
+        $model = config('alerts.history.model', HealthCheckRun::class);
+
+        return $this->hasMany($model)->latest('ran_at');
+    }
+
     public function forEachNotifiable(Closure $callback): void
+    {
+        $this->notifiableForAlerts()->forEachNotifiableForAlerts($callback);
+    }
+
+    /**
+     * Notifiables for a named escalation group, falling back to the default group.
+     *
+     * @return iterable<int, object>
+     */
+    public function notifiablesForGroup(string $group): iterable
+    {
+        return $this->notifiableForAlerts()->notifiablesForAlertGroup($group);
+    }
+
+    private function notifiableForAlerts(): HasNotifiablesForAlerts
     {
         $notifiable = $this->notifiable;
 
@@ -56,7 +89,7 @@ final class HealthCheck extends Model
             throw InvalidNotifiableForHealthCheck::doesntImplementInterface($notifiable);
         }
 
-        $notifiable->forEachNotifiableForAlerts($callback);
+        return $notifiable;
     }
 
     public function healthCheck(): Check
@@ -70,9 +103,76 @@ final class HealthCheck extends Model
         return $check->withHealthCheck($this);
     }
 
+    public function options(): MonitorOptions
+    {
+        return MonitorOptions::fromMeta($this->meta);
+    }
+
+    /**
+     * Effective tags: row tags merged with the registered check's own tags().
+     *
+     * @return list<string>
+     */
+    public function effectiveTags(): array
+    {
+        $rowTags = $this->tags ?? [];
+
+        $check = HealthFacade::find($this->health_check);
+        $checkTags = $check?->tags() ?? [];
+
+        return array_values(array_unique([...$rowTags, ...$checkTags]));
+    }
+
     public function isDue(): bool
     {
         return (new CronSchedule($this->frequency))->isDue(now());
+    }
+
+    public function latestRun(): ?HealthCheckRun
+    {
+        return $this->runs()->first();
+    }
+
+    /**
+     * Percentage of recorded runs whose status was not alertable, over an optional
+     * window. Returns 100.0 when there is no history.
+     */
+    public function uptimePercentage(?CarbonInterface $since = null): float
+    {
+        $query = $this->runs();
+
+        if ($since !== null) {
+            $query->where('ran_at', '>=', $since);
+        }
+
+        $runs = $query->get(['status']);
+
+        if ($runs->isEmpty()) {
+            return 100.0;
+        }
+
+        $healthy = $runs->reject(fn (HealthCheckRun $run): bool => $run->status->isAlertable())->count();
+
+        return round(($healthy / $runs->count()) * 100, 2);
+    }
+
+    /**
+     * 95th-percentile run duration in milliseconds over an optional window.
+     */
+    public function p95LatencyMs(?CarbonInterface $since = null): int
+    {
+        $query = $this->runs();
+
+        if ($since !== null) {
+            $query->where('ran_at', '>=', $since);
+        }
+
+        /** @var list<int> $durations */
+        $durations = $query->get(['duration_ms'])
+            ->map(fn (HealthCheckRun $run): int => $run->duration_ms)
+            ->all();
+
+        return Percentile::nearestRank($durations, 95);
     }
 
     public function dispatchHealthCheckJob(): void
@@ -96,6 +196,9 @@ final class HealthCheck extends Model
         return [
             'max_attempts' => 'int',
             'decay_minutes' => 'int',
+            'consecutive_failures' => 'int',
+            'consecutive_successes' => 'int',
+            'tags' => 'array',
             'meta' => 'array',
         ];
     }

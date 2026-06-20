@@ -17,6 +17,9 @@ return new class extends Migration
             $table->string('frequency');
             $table->unsignedSmallInteger('max_attempts')->default(1);
             $table->unsignedSmallInteger('decay_minutes')->default(1);
+            $table->unsignedInteger('consecutive_failures')->default(0);
+            $table->unsignedInteger('consecutive_successes')->default(0);
+            $table->json('tags')->nullable();
             $table->json('meta')->nullable();
             $table->timestamps();
             $table->softDeletes();
