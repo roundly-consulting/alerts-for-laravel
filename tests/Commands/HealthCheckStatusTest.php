@@ -38,3 +38,18 @@ it('exits non-zero when a check is alertable', function () {
 
     $this->artisan(HealthCheckStatus::class)->assertFailed();
 });
+
+it('filters the status table by tag', function () {
+    Health::check(ExampleHealthCheck::class);
+
+    $team = Team::create();
+    $team->createHealthCheck('example_health_check', '* * * * *', tags: ['db']);
+
+    $this->artisan(HealthCheckStatus::class, ['--tag' => 'db'])
+        ->expectsOutputToContain('example_health_check')
+        ->assertSuccessful();
+
+    $this->artisan(HealthCheckStatus::class, ['--tag' => 'cache'])
+        ->expectsOutput('No health checks are scheduled.')
+        ->assertSuccessful();
+});

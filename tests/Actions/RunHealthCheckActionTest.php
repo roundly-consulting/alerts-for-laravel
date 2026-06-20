@@ -8,8 +8,11 @@ use Illuminate\Support\Facades\Notification;
 use RoundlyConsulting\Alerts\Actions\RunHealthCheckAction;
 use RoundlyConsulting\Alerts\Enums\Status;
 use RoundlyConsulting\Alerts\Events\HealthCheckFailed;
+use RoundlyConsulting\Alerts\Facades\Health;
 use RoundlyConsulting\Alerts\Tests\HealthChecks\ExampleHealthCheck;
 use RoundlyConsulting\Alerts\Tests\HealthChecks\ExampleNotification;
+use RoundlyConsulting\Alerts\Tests\HealthChecks\ThrowingHealthCheck;
+use RoundlyConsulting\Alerts\Tests\Models\Team;
 use RoundlyConsulting\Alerts\Tests\Models\User;
 
 beforeEach(fn () => Carbon::setTestNow('2023-03-22 12:50:00'));
@@ -72,6 +75,34 @@ it('returns the result for a healthy check', function () {
 
     expect($result->isOk)->toBeTrue();
     $this->assertDatabaseEmpty('alerts');
+});
+
+it('converts a thrown check into a failed alert and recorded run without rethrowing', function () {
+    Notification::fake();
+    Event::fake();
+
+    Health::check(ThrowingHealthCheck::class);
+    $team = Team::create();
+    User::create(['email' => 'john@doe.com']);
+
+    $healthCheck = createHealthCheckWithNotifiable($team, 'throwing_health_check');
+
+    $result = app(RunHealthCheckAction::class)->execute($healthCheck);
+
+    expect($result->status)->toBe(Status::Failed)
+        ->and($result->meta['exception'])->toBe(RuntimeException::class);
+
+    $this->assertDatabaseHas('alerts', [
+        'health_check_id' => $healthCheck->getKey(),
+        'status' => 'failed',
+    ]);
+
+    $this->assertDatabaseHas('health_check_runs', [
+        'health_check_id' => $healthCheck->getKey(),
+        'status' => 'failed',
+    ]);
+
+    Event::assertDispatched(HealthCheckFailed::class);
 });
 
 it('throws when notifiable is missing', function () {

@@ -37,6 +37,29 @@ it('returns 503 when a check is alertable', function () {
         ->assertJsonPath('status', 'failed');
 });
 
+it('filters the endpoint by tag', function () {
+    Health::check(ExampleHealthCheck::class);
+
+    $team = Team::create();
+    $healthCheck = $team->createHealthCheck('example_health_check', '* * * * *', tags: ['db']);
+
+    Alert::create([
+        'notifiable_type' => $team->getMorphClass(),
+        'notifiable_id' => $team->getKey(),
+        'health_check_id' => $healthCheck->getKey(),
+        'status' => Status::Failed,
+        'triggered_at' => now(),
+    ]);
+
+    $this->getJson('health?tag=db')
+        ->assertStatus(503)
+        ->assertJsonPath('checks.0.key', 'example_health_check');
+
+    $this->getJson('health?tag=cache')
+        ->assertOk()
+        ->assertJsonPath('checks', []);
+});
+
 it('registers a named route', function () {
     $route = Health::routes('healthz');
 
