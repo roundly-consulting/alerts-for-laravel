@@ -65,6 +65,17 @@ abstract class Check
     }
 
     /**
+     * Default tags carried by every instance of this check. Override to group and
+     * filter checks; merged with any tags declared on the scheduled row.
+     *
+     * @return list<string>
+     */
+    public function tags(): array
+    {
+        return [];
+    }
+
+    /**
      * @return array<string, string>
      */
     public function frequencies(): array
@@ -79,6 +90,35 @@ abstract class Check
             '@monthly' => (string) __('Every Month'),
             '@yearly' => (string) __('Every Year'),
         ];
+    }
+
+    /**
+     * Channels applied to the bundled default notification for this run, resolved by
+     * RunHealthCheckAction off the scheduled row for the current escalation level.
+     *
+     * @var list<string>|null
+     */
+    protected ?array $channels = null;
+
+    /**
+     * Set the channel list used by the bundled default notification. A custom
+     * notification controls its own via() and ignores this.
+     *
+     * @param  list<string>|null  $channels
+     */
+    public function via(?array $channels): static
+    {
+        $this->channels = $channels;
+
+        return $this;
+    }
+
+    /**
+     * @return list<string>|null
+     */
+    public function channels(): ?array
+    {
+        return $this->channels;
     }
 
     public function notify(object $notifiable): bool

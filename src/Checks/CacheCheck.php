@@ -64,6 +64,6 @@ final class CacheCheck extends Check
 
     public function notification(object $notifiable): Notification
     {
-        return new HealthCheckFailedNotification($this);
+        return new HealthCheckFailedNotification($this, channels: $this->channels);
     }
 }

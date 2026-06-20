@@ -14,9 +14,13 @@ use RoundlyConsulting\Alerts\Check;
  */
 final class HealthCheckFailedNotification extends Notification
 {
+    /**
+     * @param  list<string>|null  $channels
+     */
     public function __construct(
         private readonly Check $check,
         private readonly string $message = '',
+        private readonly ?array $channels = null,
     ) {}
 
     /**
@@ -24,7 +28,7 @@ final class HealthCheckFailedNotification extends Notification
      */
     public function via(object $notifiable): array
     {
-        return ['mail', 'database'];
+        return $this->channels ?? ['mail', 'database'];
     }
 
     public function toMail(object $notifiable): MailMessage

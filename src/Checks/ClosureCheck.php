@@ -39,6 +39,25 @@ final class ClosureCheck extends Check
         return $this->pending->resolvedDescription() ?? parent::description();
     }
 
+    /**
+     * @return list<string>
+     */
+    public function tags(): array
+    {
+        return $this->pending->resolvedTags();
+    }
+
+    /**
+     * Declarative monitor options (failAfter/recoverAfter/timeout/routing/escalation)
+     * as a meta payload, used to seed an ad-hoc row in Health::run().
+     *
+     * @return array<string, mixed>
+     */
+    public function pendingMeta(): array
+    {
+        return $this->pending->resolvedMeta();
+    }
+
     public function check(): CheckResult
     {
         $result = ($this->pending->callback)($this);
@@ -58,7 +77,7 @@ final class ClosureCheck extends Check
             $instance = new $notification($this);
 
             if (! $instance instanceof Notification) {
-                return new HealthCheckFailedNotification($this);
+                return new HealthCheckFailedNotification($this, channels: $this->channels);
             }
 
             return $instance;
@@ -72,7 +91,7 @@ final class ClosureCheck extends Check
             }
         }
 
-        return new HealthCheckFailedNotification($this);
+        return new HealthCheckFailedNotification($this, channels: $this->channels);
     }
 
     protected function resolveNotificationThrottle(?HealthCheck $healthCheck): Limit

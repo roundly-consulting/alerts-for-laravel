@@ -16,6 +16,8 @@ use RoundlyConsulting\Alerts\Support\PendingScheduledCheck;
  */
 trait UsesHealthChecks
 {
+    use ResolvesAlertGroups;
+
     /**
      * @return MorphMany<HealthCheck, $this>
      */
@@ -39,6 +41,7 @@ trait UsesHealthChecks
     }
 
     /**
+     * @param  list<string>  $tags
      * @param  array<string, mixed>  $meta
      */
     public function createHealthCheck(
@@ -46,6 +49,7 @@ trait UsesHealthChecks
         string $frequency,
         int $maxAttempts = 1,
         int $decayMinutes = 1,
+        array $tags = [],
         array $meta = [],
     ): HealthCheck {
         return HealthCheck::create([
@@ -55,6 +59,7 @@ trait UsesHealthChecks
             'frequency' => $frequency,
             'max_attempts' => $maxAttempts,
             'decay_minutes' => $decayMinutes,
+            'tags' => $tags === [] ? null : $tags,
             'meta' => $meta,
         ]);
     }
@@ -69,7 +74,8 @@ trait UsesHealthChecks
             frequency: $data->cronFrequency(),
             maxAttempts: $data->maxAttempts,
             decayMinutes: $data->decayMinutes,
-            meta: $data->meta,
+            tags: $data->tags,
+            meta: $data->metaWithOptions(),
         );
     }
 
