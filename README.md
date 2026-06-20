@@ -69,6 +69,22 @@ return [
         'uri' => env('ALERTS_ROUTE_URI', 'health'),
         'name' => 'alerts.health',
     ],
+
+    // Master switch for maintenance-window muting + the silence model.
+    'silence' => env('ALERTS_SILENCE', true),
+    'silence-model' => \RoundlyConsulting\Alerts\AlertSilence::class,
+
+    // Run history + latency tracking, retention, and the run model.
+    'history' => [
+        'enabled' => env('ALERTS_HISTORY', true),
+        'retention_days' => (int) env('ALERTS_HISTORY_RETENTION', 30),
+        'model' => \RoundlyConsulting\Alerts\HealthCheckRun::class,
+    ],
+
+    // Optional global default escalation policy (data-only).
+    'escalation' => [
+        // 1 => 'owner', 3 => 'team', 5 => 'oncall',
+    ],
 ];
 ```
 
@@ -82,6 +98,12 @@ return [
 | `schedule.frequency` | `string` | `everyMinute` | `ALERTS_SCHEDULE_FREQUENCY` | Scheduler method used (`everyMinute`, `everyFiveMinutes`, `hourly`, …). |
 | `route.uri` | `string` | `health` | `ALERTS_ROUTE_URI` | URI for the opt-in JSON status endpoint. |
 | `route.name` | `string` | `alerts.health` | — | Route name for the status endpoint. |
+| `silence` | `bool` | `true` | `ALERTS_SILENCE` | Master switch for maintenance-window muting. |
+| `silence-model` | `class-string` | `RoundlyConsulting\Alerts\AlertSilence` | — | Model used to persist mute records. |
+| `history.enabled` | `bool` | `true` | `ALERTS_HISTORY` | Record every run (status + latency) and auto-schedule pruning. |
+| `history.retention_days` | `int` | `30` | `ALERTS_HISTORY_RETENTION` | How long runs are kept before `alerts:prune-runs` deletes them. |
+| `history.model` | `class-string` | `RoundlyConsulting\Alerts\HealthCheckRun` | — | Model used to record runs. |
+| `escalation` | `array` | `[]` | — | Optional global default escalation policy (threshold ⇒ group). |
 
 ## Usage
 
@@ -246,6 +268,25 @@ Available presets: `everyMinute()`, `everyFiveMinutes()`, `everyTenMinutes()`,
 `everyFifteenMinutes()`, `everyThirtyMinutes()`, `hourly()`, `daily()`, `weekly()`,
 `monthly()`, plus `frequency('hourly')` and `cron('15 3 * * *')`.
 
+The same builder accepts a full set of declarative options — flap debounce, recovery
+confirmation, per-check timeout, tags, channel routing, and an escalation policy:
+
+```php
+$team->monitorCheck(DiskUsageCheck::class)
+    ->everyFiveMinutes()
+    ->failAfter(3)                       // open only after 3 consecutive failures
+    ->recoverAfter(2)                    // close only after 2 consecutive OKs
+    ->timeout(5)                         // abort/mark-failed after 5 seconds
+    ->tags(['critical', 'db'])           // group + filter
+    ->notifyVia(['mail', 'slack'])       // channels for the default notification
+    ->notifyVia(['sms'], level: 3)       // override channels at escalation level 3
+    ->escalate([1 => 'owner', 3 => 'team', 5 => 'oncall'])
+    ->throttle(maxAttempts: 3, decayMinutes: 10)
+    ->save();
+```
+
+The same options are available on the inline closure builder (`Health::define(...)`).
+
 A DTO and the original positional helper remain available:
 
 ```php
@@ -256,7 +297,7 @@ $team->monitor(new ScheduleHealthCheckData(
 ));
 
 // Still supported:
-$team->createHealthCheck('disk_usage_check', '*/5 * * * *', 2, 60, [...]);
+$team->createHealthCheck('disk_usage_check', '*/5 * * * *', maxAttempts: 2, decayMinutes: 60, tags: ['db']);
 ```
 
 ### 6. Run due checks
@@ -296,16 +337,19 @@ $report->overall();                  // worst Status across all checks
 $report->isHealthy();                // bool
 
 foreach ($report->checks() as $check) {
-    // CheckStatus: key, name, status, lastAlertAt, message
+    // CheckStatus: key, name, status, lastAlertAt, message, tags, uptime, p95LatencyMs, muted
 }
 
 Health::status();                    // Status roll-up
+Health::report($team, ['critical']); // scope the report to one or more tags
+$report->whereTag('db');             // filter an in-memory report
 ```
 
 A CLI summary (non-zero exit when anything is alertable — handy in CI / uptime probes):
 
 ```bash
 php artisan alerts:status
+php artisan alerts:status --tag=db   # filter by tag
 ```
 
 An opt-in JSON endpoint (returns `200` when healthy, `503` otherwise). Register it from your
@@ -314,8 +358,132 @@ own routes file so the package never adds routes by default:
 ```php
 use RoundlyConsulting\Alerts\Facades\Health;
 
-Health::routes();          // GET /health  ->  { "status": "...", "checks": [...] }
+Health::routes();          // GET /health        -> { "status": "...", "checks": [...] }
+// GET /health?tag=critical -> only checks carrying the "critical" tag
 ```
+
+### 9. Flap detection & recovery confirmation
+
+`failAfter(n)` requires `n` consecutive failures before an alert is opened (and
+`HealthCheckFailed` / notifications fire), killing flapping noise. `recoverAfter(n)` mirrors
+it: an alert stays open until `n` consecutive OK results confirm recovery. Both default to `1`
+(open/close immediately). Per-monitor counters live on the `health_checks` row
+(`consecutive_failures` / `consecutive_successes`). Below the threshold the run is still
+recorded in history — only the alert side effects are gated.
+
+### 10. Escalation policies
+
+Notify wider audiences as a failure persists. Declare a threshold ⇒ group map with
+`escalate([...])`; the keys are consecutive-failure counts and the values are named notifiable
+groups your owner model resolves:
+
+```php
+use RoundlyConsulting\Alerts\Traits\ResolvesAlertGroups;
+
+class Team extends Model implements HasNotifiablesForAlerts
+{
+    use UsesHealthChecks; // provides a default notifiablesForAlertGroup()
+
+    public function forEachNotifiableForAlerts(Closure $callback): void { /* default group */ }
+
+    // Override to map named groups to real notifiables:
+    public function notifiablesForAlertGroup(string $group): iterable
+    {
+        return match ($group) {
+            'owner'  => [$this->owner],
+            'team'   => $this->members,
+            'oncall' => $this->onCallEngineers(),
+            default  => $this->members,
+        };
+    }
+}
+```
+
+Each newly reached level notifies only that level's group(s) and dispatches
+`HealthCheckEscalated($alert, $fromLevel, $toLevel)`. The level is tracked on the `alerts`
+row (`escalation_level`) and resets to `0` on recovery. The `ResolvesAlertGroups` trait (bundled
+into `UsesHealthChecks`) provides a default that returns the default group for any name, so
+adopting models need no change unless they want named groups.
+
+### 11. Per-check & per-level routing
+
+`notifyVia(['mail', 'slack'])` sets the channels the bundled default notification delivers on;
+`notifyVia(['sms'], level: 3)` overrides them for a specific escalation level. The effective list
+resolves in the order *level override → global list → `['mail', 'database']`*. Custom
+notifications keep full control of their own `via()`.
+
+### 12. Maintenance windows / muting
+
+Suppress alert notifications during deploys or maintenance while still recording runs:
+
+```php
+Health::mute('disk_usage_check', until: now()->addMinutes(30), reason: 'db migration');
+Health::isMuted('disk_usage_check');   // true
+Health::unmute('disk_usage_check');
+
+Health::mute('critical');              // mute a whole tag
+Health::mute('*');                     // mute everything
+Health::mute('disk_usage_check', notifiable: $team); // scope the mute to one owner
+```
+
+While muted, runs and counters are still maintained but `HealthCheckFailed` /
+`HealthCheckRecovered` and notifications are suppressed, and touched alerts are flagged
+`meta['muted']` so the status report shows them as muted.
+
+### 13. Run history, uptime & latency
+
+Every executed check records one immutable `HealthCheckRun` (status + wall-clock latency),
+queryable off the `HealthCheck` model:
+
+```php
+$check = $team->healthChecks()->first();
+
+$check->runs();                            // HasMany, newest first
+$check->latestRun();                       // ?HealthCheckRun
+$check->uptimePercentage(now()->subDay()); // % of non-alertable runs in the window
+$check->p95LatencyMs(now()->subDay());     // 95th-percentile duration in ms
+```
+
+Retention is pruned by `alerts:prune-runs` (auto-scheduled daily when history is enabled):
+
+```bash
+php artisan alerts:prune-runs --days=30
+```
+
+### 14. Per-check timeout
+
+`timeout(5)` bounds a check at five seconds. On CLI with `ext-pcntl` the check is hard-aborted
+the moment the budget elapses (via `SIGALRM`); elsewhere (web SAPI / Windows) it is a
+best-effort post-hoc report — the check runs to completion and is marked failed if it overran.
+A timed-out check flows through the normal failed-result path with a `CheckTimedOut` exception
+recorded in meta.
+
+### 15. Exception-safe checks
+
+A check's `check()` never needs a `try/catch` — any thrown exception is converted into a clean
+failed result and recorded as a normal alert + run, so a bad check never fails the queue job:
+
+```php
+Health::define('flaky', function () {
+    throw new RuntimeException('upstream exploded'); // becomes CheckResult::failed()
+});
+
+// Or build a result from a caught exception yourself:
+CheckResult::fromException($e); // status failed, exception class + bounded trace in meta
+```
+
+### Operator commands
+
+```bash
+php artisan alerts:check disk_usage_check                  # run one check now, pretty-print result
+php artisan alerts:check disk_usage_check --notifiable="App\\Models\\Team:1"  # full side-effect path
+php artisan alerts:list --tag=critical                     # inventory: key, name, frequency, last run, status, muted, tags
+php artisan alerts:status --tag=db                         # status table, tag-filterable
+php artisan alerts:prune-runs --days=30                    # prune run history (also auto-scheduled)
+```
+
+`alerts:check` exits `0` for ok/skipped and `1` for an alertable result. Without `--notifiable`
+it runs a pure probe (no side effects); with it, the full alert/notify/history path runs.
 
 ### Testing
 
@@ -339,6 +507,8 @@ The host application can listen for:
   check fails.
 - `RoundlyConsulting\Alerts\Events\HealthCheckRecovered` — dispatched with the `Alert` when
   a previously failing check passes again.
+- `RoundlyConsulting\Alerts\Events\HealthCheckEscalated` — dispatched with the `Alert` and the
+  `fromLevel` / `toLevel` each time an open alert reaches a new escalation level.
 
 ## Testing
 
