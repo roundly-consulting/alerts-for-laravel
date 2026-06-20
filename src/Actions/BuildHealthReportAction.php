@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Alerts\Actions;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use RoundlyConsulting\Alerts\Alert;
 use RoundlyConsulting\Alerts\Enums\Status;
@@ -11,18 +12,22 @@ use RoundlyConsulting\Alerts\Facades\Health;
 use RoundlyConsulting\Alerts\HealthCheck;
 use RoundlyConsulting\Alerts\Status\CheckStatus;
 use RoundlyConsulting\Alerts\Status\HealthReport;
+use RoundlyConsulting\Alerts\Support\MonitorOptions;
 
 /**
  * Builds a current health report from the scheduled HealthCheck rows and their
- * latest open alerts, optionally scoped to a single notifiable model.
+ * latest open alerts, optionally scoped to a single notifiable and/or tags.
  */
 final class BuildHealthReportAction
 {
-    public function execute(?Model $notifiable = null): HealthReport
+    /**
+     * @param  list<string>|null  $tags
+     */
+    public function execute(?Model $notifiable = null, ?array $tags = null): HealthReport
     {
         $checks = [];
 
-        $this->healthCheckQuery($notifiable)->get()->each(
+        $this->healthCheckQuery($notifiable, $tags)->get()->each(
             function (HealthCheck $healthCheck) use (&$checks): void {
                 $alert = $this->openAlert($healthCheck);
 
@@ -34,6 +39,10 @@ final class BuildHealthReportAction
                     status: $status,
                     lastAlertAt: $alert?->triggered_at,
                     message: $alert?->message,
+                    tags: $healthCheck->effectiveTags(),
+                    uptime: $healthCheck->uptimePercentage(),
+                    p95LatencyMs: $healthCheck->p95LatencyMs(),
+                    muted: (bool) ($alert?->meta[MonitorOptions::MUTED] ?? false),
                 );
             },
         );
@@ -42,9 +51,10 @@ final class BuildHealthReportAction
     }
 
     /**
-     * @return \Illuminate\Database\Eloquent\Builder<HealthCheck>
+     * @param  list<string>|null  $tags
+     * @return Builder<HealthCheck>
      */
-    private function healthCheckQuery(?Model $notifiable)
+    private function healthCheckQuery(?Model $notifiable, ?array $tags): Builder
     {
         /** @var class-string<HealthCheck> $model */
         $model = config('alerts.health-check', HealthCheck::class);
@@ -54,6 +64,14 @@ final class BuildHealthReportAction
         if ($notifiable !== null) {
             $query->where('notifiable_type', $notifiable->getMorphClass())
                 ->where('notifiable_id', $notifiable->getKey());
+        }
+
+        if ($tags !== null && $tags !== []) {
+            $query->where(function (Builder $q) use ($tags): void {
+                foreach ($tags as $tag) {
+                    $q->orWhereJsonContains('tags', $tag);
+                }
+            });
         }
 
         return $query;

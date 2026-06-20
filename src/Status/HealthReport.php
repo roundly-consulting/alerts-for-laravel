@@ -24,6 +24,17 @@ final readonly class HealthReport
     }
 
     /**
+     * A filtered copy keeping only checks carrying the given tag.
+     */
+    public function whereTag(string $tag): self
+    {
+        return new self(array_values(array_filter(
+            $this->checks,
+            fn (CheckStatus $check): bool => $check->hasAnyTag([$tag]),
+        )));
+    }
+
+    /**
      * Worst-status roll-up across every check (Ok when there are none).
      */
     public function overall(): Status
