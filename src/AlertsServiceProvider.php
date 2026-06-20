@@ -7,7 +7,10 @@ namespace RoundlyConsulting\Alerts;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\ServiceProvider;
 use RoundlyConsulting\Alerts\Commands\HealthCheckStatus;
+use RoundlyConsulting\Alerts\Commands\ListChecks;
 use RoundlyConsulting\Alerts\Commands\PerformHealthChecks;
+use RoundlyConsulting\Alerts\Commands\PruneRuns;
+use RoundlyConsulting\Alerts\Commands\RunCheck;
 
 final class AlertsServiceProvider extends ServiceProvider
 {
@@ -31,6 +34,9 @@ final class AlertsServiceProvider extends ServiceProvider
             $this->commands([
                 PerformHealthChecks::class,
                 HealthCheckStatus::class,
+                ListChecks::class,
+                RunCheck::class,
+                PruneRuns::class,
             ]);
 
             $this->publishes([
@@ -66,6 +72,10 @@ final class AlertsServiceProvider extends ServiceProvider
             $event->{$frequency}();
         } else {
             $event->everyMinute();
+        }
+
+        if (config('alerts.history.enabled', true) === true) {
+            $schedule->command('alerts:prune-runs')->daily();
         }
     }
 

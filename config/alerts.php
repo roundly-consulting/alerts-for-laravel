@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 use RoundlyConsulting\Alerts\Alert;
+use RoundlyConsulting\Alerts\AlertSilence;
 use RoundlyConsulting\Alerts\HealthCheck;
+use RoundlyConsulting\Alerts\HealthCheckRun;
 use RoundlyConsulting\Alerts\Jobs\HealthCheckJob;
 
 return [
@@ -88,6 +90,55 @@ return [
     'route' => [
         'uri' => env('ALERTS_ROUTE_URI', 'health'),
         'name' => 'alerts.health',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Maintenance Windows / Muting
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, alert notifications can be suppressed during deploys or
+    | maintenance via Health::mute(). Runs are still recorded while muted. Set
+    | the master switch to false to ignore every silence. `silence-model` is the
+    | Eloquent model used to persist mute records.
+    |
+    */
+
+    'silence' => env('ALERTS_SILENCE', true),
+
+    'silence-model' => AlertSilence::class,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Run History & Latency
+    |--------------------------------------------------------------------------
+    |
+    | Every executed check records an immutable run (status + latency) used for
+    | uptime % and p95 latency queries. `retention_days` bounds how long runs are
+    | kept; the `alerts:prune-runs` command (auto-scheduled daily when enabled)
+    | deletes anything older. `model` is the Eloquent model used for runs.
+    |
+    */
+
+    'history' => [
+        'enabled' => env('ALERTS_HISTORY', true),
+        'retention_days' => (int) env('ALERTS_HISTORY_RETENTION', 30),
+        'model' => HealthCheckRun::class,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Escalation
+    |--------------------------------------------------------------------------
+    |
+    | Optional global default escalation policy applied when a check declares
+    | none. Data-only: routing to real notifiables is resolved per-notifiable in
+    | code via the HasNotifiablesForAlerts::notifiablesForAlertGroup() method.
+    |
+    */
+
+    'escalation' => [
+        // 1 => 'owner', 3 => 'team', 5 => 'oncall',
     ],
 
 ];
