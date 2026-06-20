@@ -1,3 +1,11 @@
+<!-- roundly-hero:start -->
+<p align="center">
+  <a href="https://roundly-consulting.com/open-source/docs/alerts-for-laravel?utm_source=github&utm_medium=readme&utm_campaign=open-source&utm_content=alerts-for-laravel">
+    <img src="art/hero.png" alt="Alerts for Laravel — Roundly open source" width="100%">
+  </a>
+</p>
+<!-- roundly-hero:end -->
+
 # Alerts for Laravel
 
 Schedule recurring health checks against any notifiable model and dispatch throttled alert
