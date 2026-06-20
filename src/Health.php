@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Alerts;
 
+use Carbon\CarbonInterface;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Routing\Route;
@@ -98,7 +99,7 @@ class Health
         $check = $this->resolveCheck($check);
         $this->register($check);
 
-        $healthCheck = $this->resolveHealthCheckRow($check->key(), $notifiable);
+        $healthCheck = $this->resolveHealthCheckRow($check, $notifiable);
 
         return app(RunHealthCheckAction::class)->execute($healthCheck);
     }
@@ -119,9 +120,67 @@ class Health
         return $check;
     }
 
-    public function report(?Model $notifiable = null): HealthReport
+    /**
+     * @param  list<string>|null  $tags
+     */
+    public function report(?Model $notifiable = null, ?array $tags = null): HealthReport
     {
-        return app(BuildHealthReportAction::class)->execute($notifiable);
+        return app(BuildHealthReportAction::class)->execute($notifiable, $tags);
+    }
+
+    /**
+     * Mute alert notifications for a check key, a tag, or '*' (everything),
+     * optionally until a moment and/or scoped to a single notifiable.
+     */
+    public function mute(
+        string $key,
+        ?CarbonInterface $until = null,
+        ?Model $notifiable = null,
+        ?string $reason = null,
+    ): AlertSilence {
+        /** @var class-string<AlertSilence> $model */
+        $model = config('alerts.silence-model', AlertSilence::class);
+
+        return $model::create([
+            'key' => $key,
+            'notifiable_type' => $notifiable?->getMorphClass(),
+            'notifiable_id' => $notifiable?->getKey(),
+            'reason' => $reason,
+            'starts_at' => null,
+            'ends_at' => $until,
+        ]);
+    }
+
+    public function unmute(string $key, ?Model $notifiable = null): void
+    {
+        /** @var class-string<AlertSilence> $model */
+        $model = config('alerts.silence-model', AlertSilence::class);
+
+        $query = $model::query()->where('key', $key);
+
+        if ($notifiable !== null) {
+            $query->where('notifiable_type', $notifiable->getMorphClass())
+                ->where('notifiable_id', $notifiable->getKey());
+        } else {
+            $query->whereNull('notifiable_id');
+        }
+
+        $query->delete();
+    }
+
+    public function isMuted(string $key, ?Model $notifiable = null): bool
+    {
+        if (config('alerts.silence', true) !== true) {
+            return false;
+        }
+
+        /** @var class-string<AlertSilence> $model */
+        $model = config('alerts.silence-model', AlertSilence::class);
+
+        return $model::query()
+            ->matching([$key], $notifiable)
+            ->active(now())
+            ->exists();
     }
 
     public function status(?Model $notifiable = null): Status
@@ -153,20 +212,38 @@ class Health
         return $fake;
     }
 
-    private function resolveHealthCheckRow(string $key, Model $notifiable): HealthCheck
+    private function resolveHealthCheckRow(Check $check, Model $notifiable): HealthCheck
     {
         /** @var class-string<HealthCheck> $model */
         $model = config('alerts.health-check', HealthCheck::class);
 
+        [$tags, $meta] = $this->seedFor($check);
+
         return $model::query()->firstOrCreate([
             'notifiable_type' => $notifiable->getMorphClass(),
             'notifiable_id' => $notifiable->getKey(),
-            'health_check' => $key,
+            'health_check' => $check->key(),
         ], [
             'frequency' => '* * * * *',
             'max_attempts' => 1,
             'decay_minutes' => 1,
-            'meta' => [],
+            'tags' => $tags === [] ? null : $tags,
+            'meta' => $meta,
         ]);
+    }
+
+    /**
+     * Seed tags + declarative meta for an ad-hoc row from an inline closure check's
+     * pending options, so ad-hoc Health::run() honours failAfter/timeout/etc.
+     *
+     * @return array{0: list<string>, 1: array<string, mixed>}
+     */
+    private function seedFor(Check $check): array
+    {
+        if ($check instanceof ClosureCheck) {
+            return [$check->tags(), $check->pendingMeta()];
+        }
+
+        return [$check->tags(), []];
     }
 }

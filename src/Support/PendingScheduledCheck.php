@@ -20,6 +20,24 @@ final class PendingScheduledCheck
 
     private int $decayMinutes = 1;
 
+    private int $failAfter = 1;
+
+    private int $recoverAfter = 1;
+
+    private ?int $timeout = null;
+
+    /** @var list<string> */
+    private array $tags = [];
+
+    /** @var list<string>|null */
+    private ?array $notifyVia = null;
+
+    /** @var array<int, list<string>> */
+    private array $notifyViaLevels = [];
+
+    /** @var array<int, string> */
+    private array $escalation = [];
+
     /** @var array<string, mixed> */
     private array $meta = [];
 
@@ -94,6 +112,74 @@ final class PendingScheduledCheck
     }
 
     /**
+     * Open an alert only after this many consecutive failures (debounce flapping).
+     */
+    public function failAfter(int $consecutiveFailures): self
+    {
+        $this->failAfter = max(1, $consecutiveFailures);
+
+        return $this;
+    }
+
+    /**
+     * Close an alert only after this many consecutive successes.
+     */
+    public function recoverAfter(int $consecutiveSuccesses): self
+    {
+        $this->recoverAfter = max(1, $consecutiveSuccesses);
+
+        return $this;
+    }
+
+    /**
+     * Abort or mark-failed the check after this many seconds.
+     */
+    public function timeout(int $seconds): self
+    {
+        $this->timeout = $seconds;
+
+        return $this;
+    }
+
+    /**
+     * @param  list<string>  $tags
+     */
+    public function tags(array $tags): self
+    {
+        $this->tags = array_values(array_unique($tags));
+
+        return $this;
+    }
+
+    /**
+     * Channels for the default notification, optionally scoped to an escalation level.
+     *
+     * @param  list<string>  $channels
+     */
+    public function notifyVia(array $channels, ?int $level = null): self
+    {
+        if ($level === null) {
+            $this->notifyVia = $channels;
+        } else {
+            $this->notifyViaLevels[$level] = $channels;
+        }
+
+        return $this;
+    }
+
+    /**
+     * Escalation policy: consecutive-failure threshold => notifiable group name.
+     *
+     * @param  array<int, string>  $policy
+     */
+    public function escalate(array $policy): self
+    {
+        $this->escalation = $policy;
+
+        return $this;
+    }
+
+    /**
      * @param  array<string, mixed>  $meta
      */
     public function meta(array $meta): self
@@ -110,6 +196,13 @@ final class PendingScheduledCheck
             frequency: $this->frequency,
             maxAttempts: $this->maxAttempts,
             decayMinutes: $this->decayMinutes,
+            failAfter: $this->failAfter,
+            recoverAfter: $this->recoverAfter,
+            timeout: $this->timeout,
+            tags: $this->tags,
+            notifyVia: $this->notifyVia,
+            notifyViaLevels: $this->notifyViaLevels,
+            escalation: $this->escalation,
             meta: $this->meta,
         );
 
@@ -123,7 +216,8 @@ final class PendingScheduledCheck
             'frequency' => $data->cronFrequency(),
             'max_attempts' => $data->maxAttempts,
             'decay_minutes' => $data->decayMinutes,
-            'meta' => $data->meta,
+            'tags' => $data->tags === [] ? null : $data->tags,
+            'meta' => $data->metaWithOptions(),
         ]);
     }
 }
