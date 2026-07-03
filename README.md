@@ -185,6 +185,12 @@ CheckResult::failed('Disk full');
 CheckResult::skipped('Maintenance window');
 ```
 
+`Status` keeps its domain helpers (`isAlertable()`, `severity()`) and — via the
+[enums](#integrates-with) trait — also exposes `Status::values()`, `Status::labels()`,
+`Status::options()`/`toOptions()` (for select inputs), `Status::validationRule()`
+(`in:ok,warning,failed,skipped`), and per-case `label()`/`readable()` (`Ok`, `Warning`,
+`Failed`, `Skipped`). `Frequency` gains the same helpers on top of `Frequency::toCron()`.
+
 ### 2. Inspect registered checks
 
 ```php
@@ -517,6 +523,18 @@ The host application can listen for:
   a previously failing check passes again.
 - `RoundlyConsulting\Alerts\Events\HealthCheckEscalated` — dispatched with the `Alert` and the
   `fromLevel` / `toLevel` each time an open alert reaches a new escalation level.
+
+## Integrates with
+
+Alerts builds on other roundly-consulting packages:
+
+- **[enums-for-laravel](https://github.com/roundly-consulting/enums-for-laravel)** — the `Status`
+  and `Frequency` enums adopt the shared `RoundlyConsulting\Enums\Helpers` trait, so they expose
+  `values()`/`labels()`/`names()`/`options()`/`toOptions()`/`validationRule()`/`readable()` plus
+  case lookups (`tryFromLabel()`, `fromName()`, `hasValue()`, `is()`/`isIn()`, `when*` guards)
+  alongside their domain methods (`Status::isAlertable()`/`severity()`, `Frequency::toCron()`).
+  This makes alert statuses and check frequencies first-class for select inputs, validation
+  rules, and API payloads. Hard-required, so it is always available — no bridge to enable.
 
 ## Testing
 
