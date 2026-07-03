@@ -18,8 +18,23 @@
             "role": "Developer"
         }
     ],
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../enums-for-laravel*",
+            "options": {
+                "symlink": true
+            }
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/roundly-consulting/enums-for-laravel",
+            "no-api": true
+        }
+    ],
     "require": {
         "php": "^8.4",
+        "roundly-consulting/enums-for-laravel": "@dev",
         "illuminate/bus": "^12.0|^13.0",
         "illuminate/cache": "^12.0|^13.0",
         "illuminate/console": "^12.0|^13.0",
@@ -73,6 +88,6 @@
             }
         }
     },
-    "minimum-stability": "stable",
+    "minimum-stability": "dev",
     "prefer-stable": true
 }
