@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Alerts\Enums;
 
+use RoundlyConsulting\Enums\Helpers;
+
 enum Status: string
 {
+    use Helpers;
+
     case Ok = 'ok';
     case Warning = 'warning';
     case Failed = 'failed';
@@ -19,16 +23,6 @@ enum Status: string
         return match ($this) {
             self::Warning, self::Failed => true,
             self::Ok, self::Skipped => false,
-        };
-    }
-
-    public function label(): string
-    {
-        return match ($this) {
-            self::Ok => (string) __('alerts::status.ok'),
-            self::Warning => (string) __('alerts::status.warning'),
-            self::Failed => (string) __('alerts::status.failed'),
-            self::Skipped => (string) __('alerts::status.skipped'),
         };
     }
 

@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Alerts\Enums;
 
+use RoundlyConsulting\Enums\Helpers;
+
 /**
  * Named scheduling presets mapped to cron expressions, reused by the fluent
  * scheduled-check builder and the schedule auto-registration.
  */
 enum Frequency: string
 {
+    use Helpers;
+
     case EveryMinute = '* * * * *';
     case EveryFiveMinutes = '*/5 * * * *';
     case EveryTenMinutes = '*/10 * * * *';
