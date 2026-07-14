@@ -106,21 +106,21 @@ final class RunHealthCheckAction
         ]);
     }
 
+    /**
+     * The counters are written RELATIVELY (`failures = failures + 1`), never as a
+     * literal computed from the value this worker read. Two runs of the same monitor
+     * can overlap — the scheduler's `withoutOverlapping()` guards the command, not
+     * the per-monitor jobs it queues — and a lost increment silently defers the alert
+     * past its `failAfter` threshold. The row is then re-read, so the gates below see
+     * the true count rather than this worker's stale arithmetic.
+     */
     private function updateCounters(HealthCheck $healthCheck, CheckResult $result): void
     {
-        if ($result->isOk) {
-            $healthCheck->forceFill([
-                'consecutive_successes' => $healthCheck->consecutive_successes + 1,
-                'consecutive_failures' => 0,
-            ])->save();
+        $result->isOk
+            ? $healthCheck->increment('consecutive_successes', 1, ['consecutive_failures' => 0])
+            : $healthCheck->increment('consecutive_failures', 1, ['consecutive_successes' => 0]);
 
-            return;
-        }
-
-        $healthCheck->forceFill([
-            'consecutive_failures' => $healthCheck->consecutive_failures + 1,
-            'consecutive_successes' => 0,
-        ])->save();
+        $healthCheck->refresh();
     }
 
     private function handleFailure(
@@ -168,7 +168,20 @@ final class RunHealthCheckAction
             return;
         }
 
-        $alert->update(['escalation_level' => $toLevel]);
+        // Compare-and-swap, not a blind write: two overlapping runs can compute the
+        // same transition from the level they both read, and paging a tier twice is
+        // exactly what an escalation policy exists to avoid. The row that loses the
+        // race sees zero affected rows and stops.
+        $taken = AlertModel::query()
+            ->whereKey($alert->getKey())
+            ->where('escalation_level', $fromLevel)
+            ->update(['escalation_level' => $toLevel]);
+
+        if ($taken === 0) {
+            return;
+        }
+
+        $alert->setAttribute('escalation_level', $toLevel)->syncChanges();
 
         HealthCheckEscalated::dispatch($alert, $fromLevel, $toLevel);
 
