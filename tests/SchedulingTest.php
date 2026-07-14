@@ -36,7 +36,11 @@ it('registers the command on resolve when enabled', function () {
     app()->forgetInstance(Schedule::class);
     app()->singleton(Schedule::class, fn () => new Schedule);
 
-    (new AlertsServiceProvider(app()))->boot();
+    // The toolkit builds the package declaration in register(), so a provider
+    // instantiated by hand must register before it boots.
+    $provider = new AlertsServiceProvider(app());
+    $provider->register();
+    $provider->boot();
 
     expect(alertCommandFrom(app(Schedule::class)))->not->toBeNull();
 });
