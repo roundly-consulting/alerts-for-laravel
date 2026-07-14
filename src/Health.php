@@ -18,6 +18,8 @@ use RoundlyConsulting\Alerts\Exceptions\InvalidHealthCheck;
 use RoundlyConsulting\Alerts\Facades\Health as HealthFacade;
 use RoundlyConsulting\Alerts\Http\HealthController;
 use RoundlyConsulting\Alerts\Status\HealthReport;
+use RoundlyConsulting\Alerts\Support\AlertSilenceModel;
+use RoundlyConsulting\Alerts\Support\HealthCheckModel;
 use RoundlyConsulting\Alerts\Support\PendingCheck;
 use RoundlyConsulting\Alerts\Testing\HealthFake;
 
@@ -138,10 +140,7 @@ class Health
         ?Model $notifiable = null,
         ?string $reason = null,
     ): AlertSilence {
-        /** @var class-string<AlertSilence> $model */
-        $model = config('alerts.silence-model', AlertSilence::class);
-
-        return $model::create([
+        return AlertSilenceModel::class()::create([
             'key' => $key,
             'notifiable_type' => $notifiable?->getMorphClass(),
             'notifiable_id' => $notifiable?->getKey(),
@@ -153,10 +152,7 @@ class Health
 
     public function unmute(string $key, ?Model $notifiable = null): void
     {
-        /** @var class-string<AlertSilence> $model */
-        $model = config('alerts.silence-model', AlertSilence::class);
-
-        $query = $model::query()->where('key', $key);
+        $query = AlertSilenceModel::query()->where('key', $key);
 
         if ($notifiable !== null) {
             $query->where('notifiable_type', $notifiable->getMorphClass())
@@ -174,10 +170,7 @@ class Health
             return false;
         }
 
-        /** @var class-string<AlertSilence> $model */
-        $model = config('alerts.silence-model', AlertSilence::class);
-
-        return $model::query()
+        return AlertSilenceModel::query()
             ->matching([$key], $notifiable)
             ->active(now())
             ->exists();
@@ -214,12 +207,9 @@ class Health
 
     private function resolveHealthCheckRow(Check $check, Model $notifiable): HealthCheck
     {
-        /** @var class-string<HealthCheck> $model */
-        $model = config('alerts.health-check', HealthCheck::class);
-
         [$tags, $meta] = $this->seedFor($check);
 
-        return $model::query()->firstOrCreate([
+        return HealthCheckModel::query()->firstOrCreate([
             'notifiable_type' => $notifiable->getMorphClass(),
             'notifiable_id' => $notifiable->getKey(),
             'health_check' => $check->key(),

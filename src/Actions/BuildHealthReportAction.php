@@ -12,6 +12,8 @@ use RoundlyConsulting\Alerts\Facades\Health;
 use RoundlyConsulting\Alerts\HealthCheck;
 use RoundlyConsulting\Alerts\Status\CheckStatus;
 use RoundlyConsulting\Alerts\Status\HealthReport;
+use RoundlyConsulting\Alerts\Support\AlertModel;
+use RoundlyConsulting\Alerts\Support\HealthCheckModel;
 use RoundlyConsulting\Alerts\Support\MonitorOptions;
 
 /**
@@ -56,10 +58,7 @@ final class BuildHealthReportAction
      */
     private function healthCheckQuery(?Model $notifiable, ?array $tags): Builder
     {
-        /** @var class-string<HealthCheck> $model */
-        $model = config('alerts.health-check', HealthCheck::class);
-
-        $query = $model::query();
+        $query = HealthCheckModel::query();
 
         if ($notifiable !== null) {
             $query->where('notifiable_type', $notifiable->getMorphClass())
@@ -79,10 +78,7 @@ final class BuildHealthReportAction
 
     private function openAlert(HealthCheck $healthCheck): ?Alert
     {
-        /** @var class-string<Alert> $model */
-        $model = config('alerts.alert', Alert::class);
-
-        return $model::query()
+        return AlertModel::query()
             ->where('notifiable_type', $healthCheck->notifiable_type)
             ->where('notifiable_id', $healthCheck->notifiable_id)
             ->where('health_check_id', $healthCheck->getKey())

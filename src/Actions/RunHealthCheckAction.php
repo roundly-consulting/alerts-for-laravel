@@ -15,7 +15,9 @@ use RoundlyConsulting\Alerts\Events\HealthCheckRecovered;
 use RoundlyConsulting\Alerts\Exceptions\CheckTimedOut;
 use RoundlyConsulting\Alerts\Exceptions\InvalidNotifiableForHealthCheck;
 use RoundlyConsulting\Alerts\HealthCheck;
-use RoundlyConsulting\Alerts\HealthCheckRun;
+use RoundlyConsulting\Alerts\Support\AlertModel;
+use RoundlyConsulting\Alerts\Support\AlertSilenceModel;
+use RoundlyConsulting\Alerts\Support\HealthCheckRunModel;
 use RoundlyConsulting\Alerts\Support\MonitorOptions;
 use RoundlyConsulting\Alerts\Support\Timeout;
 use Throwable;
@@ -94,10 +96,7 @@ final class RunHealthCheckAction
             return;
         }
 
-        /** @var class-string<HealthCheckRun> $model */
-        $model = config('alerts.history.model', HealthCheckRun::class);
-
-        $model::create([
+        HealthCheckRunModel::class()::create([
             'health_check_id' => $healthCheck->getKey(),
             'status' => $result->status,
             'duration_ms' => $durationMs,
@@ -225,10 +224,7 @@ final class RunHealthCheckAction
 
         $keys = [$healthCheck->health_check, ...$healthCheck->effectiveTags(), '*'];
 
-        /** @var class-string<\RoundlyConsulting\Alerts\AlertSilence> $model */
-        $model = config('alerts.silence-model', \RoundlyConsulting\Alerts\AlertSilence::class);
-
-        return $model::query()
+        return AlertSilenceModel::query()
             ->matching($keys, $healthCheck->notifiable)
             ->active(now())
             ->exists();
@@ -252,7 +248,7 @@ final class RunHealthCheckAction
             $meta[MonitorOptions::MUTED] = true;
         }
 
-        return $this->alertModel()::create([
+        return AlertModel::class()::create([
             'notifiable_type' => $notifiable->getMorphClass(),
             'notifiable_id' => $notifiable->getKey(),
             'health_check_id' => $healthCheck->getKey(),
@@ -268,7 +264,7 @@ final class RunHealthCheckAction
     {
         $notifiable = $this->notifiable($healthCheck);
 
-        return $this->alertModel()::query()
+        return AlertModel::query()
             ->where('notifiable_type', $notifiable->getMorphClass())
             ->where('notifiable_id', $notifiable->getKey())
             ->where('health_check_id', $healthCheck->getKey())
@@ -293,16 +289,5 @@ final class RunHealthCheckAction
     private function defaultChannels(): array
     {
         return ['mail', 'database'];
-    }
-
-    /**
-     * @return class-string<Alert>
-     */
-    private function alertModel(): string
-    {
-        /** @var class-string<Alert> $model */
-        $model = config('alerts.alert', Alert::class);
-
-        return $model;
     }
 }

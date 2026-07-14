@@ -10,6 +10,7 @@ use RoundlyConsulting\Alerts\Check;
 use RoundlyConsulting\Alerts\Facades\Health;
 use RoundlyConsulting\Alerts\HealthCheck;
 use RoundlyConsulting\Alerts\Status\CheckStatus;
+use RoundlyConsulting\Alerts\Support\HealthCheckModel;
 
 final class ListChecks extends Command
 {
@@ -63,10 +64,7 @@ final class ListChecks extends Command
 
     private function scheduledRow(string $key, ?string $tag): ?HealthCheck
     {
-        /** @var class-string<HealthCheck> $model */
-        $model = config('alerts.health-check', HealthCheck::class);
-
-        $query = $model::query()->where('health_check', $key);
+        $query = HealthCheckModel::query()->where('health_check', $key);
 
         if ($tag !== null) {
             $query->whereJsonContains('tags', $tag);
@@ -77,10 +75,7 @@ final class ListChecks extends Command
 
     private function rowHasTag(string $key, string $tag): bool
     {
-        /** @var class-string<HealthCheck> $model */
-        $model = config('alerts.health-check', HealthCheck::class);
-
-        return $model::query()
+        return HealthCheckModel::query()
             ->where('health_check', $key)
             ->whereJsonContains('tags', $tag)
             ->exists();

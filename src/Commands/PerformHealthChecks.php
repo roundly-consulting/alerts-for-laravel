@@ -6,6 +6,7 @@ namespace RoundlyConsulting\Alerts\Commands;
 
 use Illuminate\Console\Command;
 use RoundlyConsulting\Alerts\HealthCheck;
+use RoundlyConsulting\Alerts\Support\HealthCheckModel;
 
 final class PerformHealthChecks extends Command
 {
@@ -15,10 +16,7 @@ final class PerformHealthChecks extends Command
 
     public function handle(): int
     {
-        /** @var class-string<HealthCheck> $model */
-        $model = config('alerts.health-check', HealthCheck::class);
-
-        $model::query()->each(function (HealthCheck $healthCheck): void {
+        HealthCheckModel::query()->each(function (HealthCheck $healthCheck): void {
             if ($healthCheck->isDue()) {
                 $healthCheck->dispatchHealthCheckJob();
             }

@@ -206,10 +206,7 @@ final class PendingScheduledCheck
             meta: $this->meta,
         );
 
-        /** @var class-string<HealthCheck> $model */
-        $model = config('alerts.health-check', HealthCheck::class);
-
-        return $model::create([
+        return HealthCheckModel::class()::create([
             'notifiable_type' => $this->notifiable->getMorphClass(),
             'notifiable_id' => $this->notifiable->getKey(),
             'health_check' => $data->key(),
