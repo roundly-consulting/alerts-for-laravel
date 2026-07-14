@@ -27,17 +27,21 @@ final readonly class MonitorOptions
 
     /**
      * @param  array<string, mixed>  $meta
+     * @param  array<int|string, string>  $defaultEscalation  the globally configured
+     *                                                        policy, applied when the row declares none
      */
     public function __construct(
         private array $meta = [],
+        private array $defaultEscalation = [],
     ) {}
 
     /**
      * @param  array<string, mixed>|null  $meta
+     * @param  array<int|string, string>  $defaultEscalation
      */
-    public static function fromMeta(?array $meta): self
+    public static function fromMeta(?array $meta, array $defaultEscalation = []): self
     {
-        return new self($meta ?? []);
+        return new self($meta ?? [], $defaultEscalation);
     }
 
     public function failAfter(): int
@@ -108,15 +112,18 @@ final readonly class MonitorOptions
     /**
      * Escalation policy as a threshold => group map, sorted ascending by threshold.
      *
+     * A policy declared on the row wins; a row that declares none inherits the
+     * globally configured default (`alerts.escalation`).
+     *
      * @return array<int, string>
      */
     public function escalation(): array
     {
-        $policy = $this->meta[self::ESCALATION] ?? [];
+        $declared = $this->meta[self::ESCALATION] ?? [];
 
-        if (! is_array($policy)) {
-            return [];
-        }
+        $policy = is_array($declared) && $declared !== []
+            ? $declared
+            : $this->defaultEscalation;
 
         $resolved = [];
 

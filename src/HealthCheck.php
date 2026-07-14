@@ -184,9 +184,16 @@ class HealthCheck extends Model
         $job::dispatch($this);
     }
 
+    /**
+     * The per-monitor declarations from the row's `meta`, falling back to the
+     * globally configured escalation policy when the row declares none.
+     */
     public function options(): MonitorOptions
     {
-        return MonitorOptions::fromMeta($this->meta);
+        /** @var array<int|string, string> $default */
+        $default = config('alerts.escalation', []);
+
+        return MonitorOptions::fromMeta($this->meta, $default);
     }
 
     protected static function newFactory(): HealthCheckFactory
