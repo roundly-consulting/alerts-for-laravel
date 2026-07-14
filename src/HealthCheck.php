@@ -18,6 +18,7 @@ use RoundlyConsulting\Alerts\Facades\Health as HealthFacade;
 use RoundlyConsulting\Alerts\Interfaces\HasNotifiablesForAlerts;
 use RoundlyConsulting\Alerts\Jobs\HealthCheckJob;
 use RoundlyConsulting\Alerts\Support\CronSchedule;
+use RoundlyConsulting\Alerts\Support\HealthCheckRunModel;
 use RoundlyConsulting\Alerts\Support\MonitorOptions;
 use RoundlyConsulting\Alerts\Support\Percentile;
 
@@ -37,8 +38,11 @@ use RoundlyConsulting\Alerts\Support\Percentile;
  * @property CarbonInterface|null $updated_at
  * @property CarbonInterface|null $deleted_at
  * @property-read Model|null $notifiable
+ *
+ * Deliberately not `final`: `alerts.health-check` documents pointing the package at
+ * your own model, which means extending this one.
  */
-final class HealthCheck extends Model
+class HealthCheck extends Model
 {
     /** @use HasFactory<HealthCheckFactory> */
     use HasFactory;
@@ -56,14 +60,16 @@ final class HealthCheck extends Model
     }
 
     /**
+     * The foreign key is named explicitly: a host that points `alerts.health-check`
+     * at its own model would otherwise have Eloquent derive it from that class's
+     * name (`custom_health_check_id`) and every run read would miss the column the
+     * migration actually creates.
+     *
      * @return HasMany<HealthCheckRun, $this>
      */
     public function runs(): HasMany
     {
-        /** @var class-string<HealthCheckRun> $model */
-        $model = config('alerts.history.model', HealthCheckRun::class);
-
-        return $this->hasMany($model)->latest('ran_at');
+        return $this->hasMany(HealthCheckRunModel::class(), 'health_check_id')->latest('ran_at');
     }
 
     public function forEachNotifiable(Closure $callback): void
@@ -101,11 +107,6 @@ final class HealthCheck extends Model
         }
 
         return $check->withHealthCheck($this);
-    }
-
-    public function options(): MonitorOptions
-    {
-        return MonitorOptions::fromMeta($this->meta);
     }
 
     /**
@@ -181,6 +182,11 @@ final class HealthCheck extends Model
         $job = config('alerts.job', HealthCheckJob::class);
 
         $job::dispatch($this);
+    }
+
+    public function options(): MonitorOptions
+    {
+        return MonitorOptions::fromMeta($this->meta);
     }
 
     protected static function newFactory(): HealthCheckFactory

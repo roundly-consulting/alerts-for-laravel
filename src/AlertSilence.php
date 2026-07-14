@@ -24,8 +24,11 @@ use RoundlyConsulting\Alerts\Database\Factories\AlertSilenceFactory;
  * @property CarbonInterface|null $ends_at
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
+ *
+ * Deliberately not `final`: `alerts.silence-model` documents pointing the package at
+ * your own model, which means extending this one.
  */
-final class AlertSilence extends Model
+class AlertSilence extends Model
 {
     /** @use HasFactory<AlertSilenceFactory> */
     use HasFactory;

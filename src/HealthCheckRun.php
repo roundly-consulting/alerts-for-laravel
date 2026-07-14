@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use RoundlyConsulting\Alerts\Database\Factories\HealthCheckRunFactory;
 use RoundlyConsulting\Alerts\Enums\Status;
+use RoundlyConsulting\Alerts\Support\HealthCheckModel;
 
 /**
  * @property int $id
@@ -18,8 +19,12 @@ use RoundlyConsulting\Alerts\Enums\Status;
  * @property string|null $message
  * @property array<string, mixed>|null $meta
  * @property \Carbon\CarbonInterface $ran_at
+ * @property-read HealthCheck|null $healthCheck
+ *
+ * Deliberately not `final`: `alerts.history.model` documents pointing the package at
+ * your own model, which means extending this one.
  */
-final class HealthCheckRun extends Model
+class HealthCheckRun extends Model
 {
     /** @use HasFactory<HealthCheckRunFactory> */
     use HasFactory;
@@ -33,7 +38,7 @@ final class HealthCheckRun extends Model
      */
     public function healthCheck(): BelongsTo
     {
-        return $this->belongsTo(HealthCheck::class);
+        return $this->belongsTo(HealthCheckModel::class(), 'health_check_id');
     }
 
     protected static function newFactory(): HealthCheckRunFactory

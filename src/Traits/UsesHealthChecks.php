@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 use RoundlyConsulting\Alerts\Alert;
 use RoundlyConsulting\Alerts\DataTransferObjects\ScheduleHealthCheckData;
 use RoundlyConsulting\Alerts\HealthCheck;
+use RoundlyConsulting\Alerts\Support\AlertModel;
+use RoundlyConsulting\Alerts\Support\HealthCheckModel;
 use RoundlyConsulting\Alerts\Support\PendingScheduledCheck;
 
 /**
@@ -23,10 +25,7 @@ trait UsesHealthChecks
      */
     public function healthChecks(): MorphMany
     {
-        /** @var class-string<HealthCheck> $model */
-        $model = config('alerts.health-check', HealthCheck::class);
-
-        return $this->morphMany($model, 'notifiable');
+        return $this->morphMany(HealthCheckModel::class(), 'notifiable');
     }
 
     /**
@@ -34,10 +33,7 @@ trait UsesHealthChecks
      */
     public function alerts(): MorphMany
     {
-        /** @var class-string<Alert> $model */
-        $model = config('alerts.alert', Alert::class);
-
-        return $this->morphMany($model, 'notifiable');
+        return $this->morphMany(AlertModel::class(), 'notifiable');
     }
 
     /**
@@ -52,7 +48,7 @@ trait UsesHealthChecks
         array $tags = [],
         array $meta = [],
     ): HealthCheck {
-        return HealthCheck::create([
+        return HealthCheckModel::class()::create([
             'notifiable_type' => $this->getMorphClass(),
             'notifiable_id' => $this->getKey(),
             'health_check' => $healthCheckKey,

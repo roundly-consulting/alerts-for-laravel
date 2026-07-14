@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use RoundlyConsulting\Alerts\Database\Factories\AlertFactory;
 use RoundlyConsulting\Alerts\Enums\Status;
+use RoundlyConsulting\Alerts\Support\HealthCheckModel;
 
 /**
  * @property int $id
@@ -27,8 +28,12 @@ use RoundlyConsulting\Alerts\Enums\Status;
  * @property \Carbon\CarbonInterface|null $created_at
  * @property \Carbon\CarbonInterface|null $updated_at
  * @property \Carbon\CarbonInterface|null $deleted_at
+ * @property-read HealthCheck|null $healthCheck
+ *
+ * Deliberately not `final`: `alerts.alert` documents pointing the package at your
+ * own model, which means extending this one.
  */
-final class Alert extends Model
+class Alert extends Model
 {
     /** @use HasFactory<AlertFactory> */
     use HasFactory;
@@ -50,7 +55,7 @@ final class Alert extends Model
      */
     public function healthCheck(): BelongsTo
     {
-        return $this->belongsTo(HealthCheck::class);
+        return $this->belongsTo(HealthCheckModel::class(), 'health_check_id');
     }
 
     /**
