@@ -41,6 +41,10 @@ php artisan vendor:publish --tag="alerts-migrations"
 php artisan migrate
 ```
 
+The migrations are **publish-only** — the package never registers them with the migrator, so
+`php artisan migrate` runs exactly the files you published, in the order they were published.
+Publishing again is idempotent: it overwrites in place rather than dropping a second copy.
+
 Optionally publish the config file or translations:
 
 ```bash
@@ -111,7 +115,11 @@ return [
 | `history.enabled` | `bool` | `true` | `ALERTS_HISTORY` | Record every run (status + latency) and auto-schedule pruning. |
 | `history.retention_days` | `int` | `30` | `ALERTS_HISTORY_RETENTION` | How long runs are kept before `alerts:prune-runs` deletes them. |
 | `history.model` | `class-string` | `RoundlyConsulting\Alerts\HealthCheckRun` | — | Model used to record runs. |
-| `escalation` | `array` | `[]` | — | Optional global default escalation policy (threshold ⇒ group). |
+| `escalation` | `array` | `[]` | — | Global default escalation policy (threshold ⇒ group), applied to any check that declares none of its own. |
+
+Every model key above may point at your own subclass of the packaged model — the package
+resolves each one through a single seam, so a swapped model is honoured everywhere (relations,
+actions, commands and the report alike).
 
 ## Usage
 
@@ -413,9 +421,19 @@ class Team extends Model implements HasNotifiablesForAlerts
 }
 ```
 
+A check that declares no policy of its own inherits the global default from
+`config('alerts.escalation')`, so you can set one policy for the whole application and override
+it per check:
+
+```php
+// config/alerts.php
+'escalation' => [1 => 'owner', 3 => 'team', 5 => 'oncall'],
+```
+
 Each newly reached level notifies only that level's group(s) and dispatches
-`HealthCheckEscalated($alert, $fromLevel, $toLevel)`. The level is tracked on the `alerts`
-row (`escalation_level`) and resets to `0` on recovery. The `ResolvesAlertGroups` trait (bundled
+`HealthCheckEscalated($alert, $fromLevel, $toLevel)` — exactly once, even if two runs of the
+same check overlap. The level is tracked on the `alerts` row (`escalation_level`) and resets to
+`0` on recovery. The `ResolvesAlertGroups` trait (bundled
 into `UsesHealthChecks`) provides a default that returns the default group for any name, so
 adopting models need no change unless they want named groups.
 
