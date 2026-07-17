@@ -43,13 +43,25 @@ it('creates alert and sends alert notification when health check failed', functi
     $job = new HealthCheckJob($healthCheck);
     $this->app->call([$job, 'handle']);
 
+    // The scalar columns are matched in the database; `meta` deliberately is not. It is a
+    // `json` column, and Postgres ships no equality operator for `json` (only `jsonb` has
+    // one), so a `where meta = '…'` is not merely wrong there — it is a hard
+    // `operator does not exist: json = unknown` error. On SQLite the same clause is a
+    // plain text comparison and passes, which is why this only ever surfaced on the real
+    // engine. The payload is asserted through the model's cast below, which is
+    // driver-independent and a stronger check anyway (it compares a decoded structure, not
+    // a byte-for-byte encoding whose key order is incidental).
     $this->assertDatabaseHas('alerts', [
         'notifiable_type' => Team::class,
         'notifiable_id' => 1,
         'health_check_id' => 1,
         'triggered_at' => '2023-03-22 12:50:00',
         'message' => 'Something terrible happened',
-        'meta' => json_encode(['definition-meta' => ['specific-thing' => 'yes'], 'meta' => ['ufo' => 'exists']]),
+    ]);
+
+    expect(Alert::query()->sole()->meta)->toBe([
+        'definition-meta' => ['specific-thing' => 'yes'],
+        'meta' => ['ufo' => 'exists'],
     ]);
 
     Notification::assertSentTo($user, ExampleNotification::class);
