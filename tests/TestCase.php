@@ -4,41 +4,42 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Alerts\Tests;
 
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
-use Orchestra\Testbench\TestCase as Orchestra;
+use Illuminate\Support\ServiceProvider;
 use RoundlyConsulting\Alerts\AlertsServiceProvider;
+use RoundlyConsulting\Testing\PackageTestCase;
 
-abstract class TestCase extends Orchestra
+abstract class TestCase extends PackageTestCase
 {
     /**
-     * @return array<int, class-string>
+     * Every provider alerts hard-requires, in registration order. A host auto-discovers
+     * these; the suite must list them or the test environment is a fiction.
+     *
+     * @return list<class-string<ServiceProvider>>
      */
-    protected function getPackageProviders($app): array
+    protected function packageProviders(): array
+    {
+        return [AlertsServiceProvider::class];
+    }
+
+    /**
+     * The four alerts migrations, named by provider class (never by filename), plus the
+     * host-owned fixture tables the notifiables live in.
+     *
+     * @return list<class-string<ServiceProvider>|string>
+     */
+    protected function migrationSources(): array
     {
         return [
             AlertsServiceProvider::class,
+            __DIR__.'/database/migrations',
         ];
     }
 
-    protected function defineEnvironment($app): void
+    /**
+     * @return array<string, mixed>
+     */
+    protected function configBeforeBoot(): array
     {
-        $app['config']->set('database.default', 'testing');
-        $app['config']->set('mail.default', 'array');
-    }
-
-    protected function defineDatabaseMigrations(): void
-    {
-        $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
-
-        Schema::create('users', function (Blueprint $table): void {
-            $table->id();
-            $table->string('email');
-        });
-
-        Schema::create('teams', function (Blueprint $table): void {
-            $table->id();
-            $table->string('name')->nullable();
-        });
+        return ['mail.default' => 'array'];
     }
 }

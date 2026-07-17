@@ -5,11 +5,55 @@ declare(strict_types=1);
 use RoundlyConsulting\Alerts\Alert;
 use RoundlyConsulting\Alerts\Facades\Health;
 use RoundlyConsulting\Alerts\HealthCheck;
+use RoundlyConsulting\Alerts\Tests\Fixtures\SwappedModelsTestCase;
 use RoundlyConsulting\Alerts\Tests\HealthChecks\ExampleHealthCheck;
 use RoundlyConsulting\Alerts\Tests\Models\Team;
 use RoundlyConsulting\Alerts\Tests\TestCase;
 
-uses(TestCase::class)->in(__DIR__);
+// Explicit paths, not `->in(__DIR__)`: the Configured directory below needs a different
+// base case, and a blanket bind would claim it first — Pest binds a test case per
+// directory, not per file. ArchTest.php is listed because `swappableModelsAreNotFinal`
+// reads the four `alerts.…` config defaults and so needs the app booted; an arch file is
+// not automatically test-cased.
+uses(TestCase::class)->in(
+    'ArchTest.php',
+    'AlertableTest.php',
+    'AlertFactoryTest.php',
+    'AlertScopesTest.php',
+    'AlertTest.php',
+    'CheckResultTest.php',
+    'HealthBuilderTest.php',
+    'HealthCheckTest.php',
+    'HealthRunTest.php',
+    'HealthTest.php',
+    'SchedulingTest.php',
+    'Actions',
+    'Checks',
+    'Commands',
+    'Concurrency',
+    'DataTransferObjects',
+    'Enums',
+    'Escalation',
+    'Flap',
+    'History',
+    'Http',
+    'Jobs',
+    'Maintenance',
+    'Migrations',
+    'Notifications',
+    'Provider',
+    'Recovery',
+    'Routing',
+    'Status',
+    'Support',
+    'Tags',
+    'Testing',
+    'Traits',
+);
+
+// The model-swap proofs need all four `alerts.…` model keys pointed at host subclasses
+// BEFORE the providers boot, so they run on their own base case in their own directory.
+uses(SwappedModelsTestCase::class)->in('Configured');
 
 uses()->beforeEach(function (): void {
     ExampleHealthCheck::$ok = true;
