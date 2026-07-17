@@ -26,15 +26,14 @@ ArchPresets::strictTypes('RoundlyConsulting\Alerts');
  *    container binding for the subclass, so finalising it would break the package's own
  *    documented testing surface.
  */
-ArchPresets::finalByDefault('RoundlyConsulting\Alerts')
-    ->ignoring([
-        Alert::class,
-        AlertSilence::class,
-        HealthCheck::class,
-        HealthCheckRun::class,
-        Check::class,
-        Health::class,
-    ]);
+ArchPresets::finalByDefault('RoundlyConsulting\Alerts', [
+    Alert::class,
+    AlertSilence::class,
+    HealthCheck::class,
+    HealthCheckRun::class,
+    Check::class,
+    Health::class,
+]);
 
 /**
  * The counter-weight, and the fleet's 7×-shipped fatal — alerts #25 was one of the seven.
