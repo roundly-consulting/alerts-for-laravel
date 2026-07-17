@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RoundlyConsulting\Alerts\Tests\Models;
 
 use RoundlyConsulting\Alerts\HealthCheckRun;
+use RoundlyConsulting\Testing\Fixtures\Concerns\CountsCreations;
 
 /**
  * A host's own run model, the way `config/alerts.php` invites: extend the packaged
@@ -12,5 +13,7 @@ use RoundlyConsulting\Alerts\HealthCheckRun;
  */
 final class CustomHealthCheckRun extends HealthCheckRun
 {
+    use CountsCreations;
+
     protected $table = 'health_check_runs';
 }

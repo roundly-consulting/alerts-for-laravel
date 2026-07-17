@@ -2,163 +2,113 @@
 
 declare(strict_types=1);
 
-use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\ServiceProvider;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\DB;
 use RoundlyConsulting\Alerts\AlertsServiceProvider;
+use RoundlyConsulting\PackageToolkit\Enums\DatabaseDriver;
+use RoundlyConsulting\Testing\Database\DriverMatrix;
 
 /**
- * Four migrations wired together by two real foreign keys: `alerts.health_check_id`
+ * Alerts ships four migrations wired by two real foreign keys — `alerts.health_check_id`
  * and `health_check_runs.health_check_id`, both onto `health_checks`. Migrations are
- * publish-only, and publishing preserves the source directory's order — so that order
- * has to be runnable end to end from an empty database.
+ * publish-only and publishing preserves the source order, so that order has to be runnable
+ * end to end from an empty database.
  *
- * SQLite happily creates a table referencing a missing parent (it only complains at
- * insert time), so the first two tests are the committed pin, not the proof: the order
- * was proved against a real PostgreSQL server, which rejects a dangling foreign key at
- * DDL time — the shipped order applied all four with both keys, and a negative control
- * (`create_alerts_table` first) was watched being rejected with `relation
- * "health_checks" does not exist`.
- *
- * These tests run the *published* files, under their published names, into a database
- * that starts empty — exactly what a host does.
+ * This file replaces ~110 lines of hand-rolled machinery: a temp-directory publisher, a
+ * second SQLite connection, and a bespoke regex FK parser. The parser was genuinely good
+ * work — it understood both of Laravel's FK forms and guarded its own parse — but it is
+ * exactly the code the testing package exists to own once, and its SQLite-based `migrate`
+ * assertions could never fail on a broken order: SQLite creates a table pointing at a
+ * missing parent and only complains at insert time, which is the mechanism behind five
+ * packages shipping uninstallable migration orders under green suites.
  */
-beforeEach(function (): void {
-    $this->publishedPath = sys_get_temp_dir().'/alerts-migration-order-'.bin2hex(random_bytes(6));
-    $this->publishedDatabase = $this->publishedPath.'/database.sqlite';
+$migrations = __DIR__.'/../../database/migrations';
 
-    File::makeDirectory($this->publishedPath, recursive: true);
-    File::put($this->publishedDatabase, '');
-
-    $published = ServiceProvider::pathsToPublish(AlertsServiceProvider::class, 'alerts-migrations');
-
-    foreach ($published as $source => $target) {
-        File::copy($source, $this->publishedPath.'/'.basename((string) $target));
-    }
-
-    config()->set('database.connections.published', [
-        'driver' => 'sqlite',
-        'database' => $this->publishedDatabase,
-        'prefix' => '',
-        'foreign_key_constraints' => true,
-    ]);
-});
-
-afterEach(function (): void {
-    File::deleteDirectory($this->publishedPath);
-});
-
-it('migrates the published files clean from an empty database', function (): void {
-    $schema = Schema::connection('published');
-
-    expect($schema->hasTable('health_checks'))->toBeFalse();
-
-    $this->artisan('migrate', [
-        '--database' => 'published',
-        '--path' => $this->publishedPath,
-        '--realpath' => true,
-    ])->assertExitCode(0);
-
-    foreach (['health_checks', 'alerts', 'alert_silences', 'health_check_runs'] as $table) {
-        expect($schema->hasTable($table))->toBeTrue();
-    }
-});
-
-it('keeps every foreign key intact in the published schema', function (): void {
-    $this->artisan('migrate', [
-        '--database' => 'published',
-        '--path' => $this->publishedPath,
-        '--realpath' => true,
-    ])->assertExitCode(0);
-
-    $schema = Schema::connection('published');
-
-    $foreignKeys = static fn (string $table): array => array_map(
-        static fn (array $key): string => $key['columns'][0].' → '.$key['foreign_table'],
-        $schema->getForeignKeys($table),
-    );
-
-    expect($foreignKeys('alerts'))->toContain('health_check_id → health_checks')
-        ->and($foreignKeys('health_check_runs'))->toContain('health_check_id → health_checks');
+/**
+ * M — the structural pin, and the only one of these that catches a broken order on SQLite.
+ *
+ * `foreignKeys: 2` is what stops it passing over an empty parse: the count is pinned, so a
+ * parser that silently understood nothing fails instead of reporting success over zero
+ * edges. Alerts declares its two keys in BOTH of Laravel's forms — the long-hand
+ * `->references('id')->on('health_checks')` (the fleet's named case for that form, alerts
+ * #34) and `->constrained('health_checks')` — so this also pins that both stay parseable.
+ */
+it('creates every foreign key target before the table that references it', function () use ($migrations): void {
+    expect($migrations)->toHaveRunnableMigrationOrder(foreignKeys: 2);
 });
 
 /**
- * The structural pin — the one that catches a broken order on SQLite, where the two
- * tests above stay green against a dangling foreign key (proved on shops #30 and teams
- * #31, where re-breaking the order left them both passing).
- *
- * Read every foreign key out of the migration sources and assert the parent's CREATE
- * really does sort before the child's. Alerts declares them in BOTH of Laravel's forms
- * — `->constrained('health_checks')` and `->references('id')->on('health_checks')` —
- * so both are parsed.
+ * P — the publish-only guards. The fleet publishes migrations timestamped rather than
+ * auto-loading them; doing both runs both copies and dies on a duplicate table (bug #5, on
+ * three packages). `4` pins the file count so neither check can pass over an empty or
+ * relocated directory.
  */
-it('creates every foreign key target before the table that references it', function (): void {
-    $sources = glob(__DIR__.'/../../database/migrations/*.php');
-    sort($sources);
+it('never auto-loads its migrations — the host publishes them', function (): void {
+    expect(AlertsServiceProvider::class)->toNotAutoLoadMigrations();
+});
 
-    /** @var array<string, int> $createdAt */
-    $createdAt = [];
-    /** @var list<array{child: string, parent: string, at: int}> $edges */
-    $edges = [];
+it('publishes its migrations timestamp-injected into the host', function (): void {
+    expect(AlertsServiceProvider::class)->toPublishMigrationsTimestamped('alerts-migrations', 4);
+});
 
-    foreach ($sources as $position => $source) {
-        $body = (string) file_get_contents($source);
+/**
+ * R — the real-engine proof. The old version of this file migrated the published files
+ * into a second SQLite database, which is not a proof: SQLite accepts a dangling foreign
+ * key at DDL time. Postgres rejects it, so this is the assertion that actually watches the
+ * shipped order install.
+ */
+it('applies its migrations on postgres', function () use ($migrations): void {
+    expect($migrations)->toApplyOnConnection('pgsql', migrations: 4);
+})->skip(fn (): bool => ! test()->connectionAvailable('pgsql'), 'no postgres connection available');
 
-        // A CREATE registers its table; an ALTER references one already created.
-        preg_match("/Schema::(create|table)\('([a-z_]+)'/", $body, $schema);
-        expect($schema)->not->toBeEmpty();
+/**
+ * R's negative control — the half that makes the one above mean something. A green FK test
+ * proves nothing until you have watched the engine *reject* the broken order (forms #28).
+ *
+ * This is adoptable here precisely because alerts has FK edges: reverse the four files and
+ * `create_alerts_table` runs before `create_health_checks_table`, so Postgres must refuse
+ * with `relation "health_checks" does not exist`. Verified non-vacuous by pointing it at
+ * the sqlite connection, where it does not quietly pass but **fails loudly** — "the engine
+ * ACCEPTED a deliberately broken migration order" — which is why it is gated on a real
+ * connection rather than the default one.
+ *
+ * (The 0-FK rows in this wave cannot adopt this: with nothing to violate, Postgres accepts
+ * the reversed list and the assertion fails by design. Alerts is the row in this batch that
+ * has something to refuse.)
+ */
+it('rejects a child-before-parent order on postgres', function () use ($migrations): void {
+    expect($migrations)->toRejectBrokenOrderOnConnection(
+        fn (array $files): array => array_reverse($files),
+        'pgsql',
+    );
+})->skip(fn (): bool => ! test()->connectionAvailable('pgsql'), 'no postgres connection available');
 
-        $table = $schema[2];
+/**
+ * The driver-truth pin (Wave 2's lesson). It compares the env-DECLARED driver against what
+ * the connection itself answers, so a "pgsql" leg that quietly stayed on SQLite — a
+ * decapitated `defineEnvironment()`, a missing `TESTING_DB_DRIVER` — goes red here rather
+ * than passing as a postgres run. It fires automatically, unlike reading a skip count by
+ * hand.
+ */
+it('runs on the driver the environment declares', function (): void {
+    expect(DatabaseDriver::current())->toBe(DatabaseDriver::from(DriverMatrix::driver()));
+});
 
-        if ($schema[1] === 'create') {
-            $createdAt[$table] = $position;
-        } else {
-            expect(array_key_exists($table, $createdAt))->toBeTrue("{$table} is altered before it is created");
-        }
+/**
+ * The `json` tags/meta columns and the morph columns are what the drivers render
+ * differently. Pinning a round-trip on whatever engine the leg configured proves the
+ * columns are usable rather than merely creatable.
+ */
+it('round-trips the alert columns on the configured engine', function (): void {
+    $check = createHealthCheckWithNotifiable();
 
-        // Form A: `foreignId('x_id')->constrained()` (parent derived from the column
-        // name) or `->constrained('explicit_table')`.
-        preg_match_all(
-            "/foreignId\('([a-z_]+)'\).*?->constrained\(\s*(?:'([a-z_]+)')?\s*\)/s",
-            $body,
-            $constrained,
-            PREG_SET_ORDER,
-        );
+    $check->update(['tags' => ['db', 'critical'], 'meta' => ['region' => 'eu', 'tier' => 2]]);
 
-        // Form B: `->references('id')->on('parent')`, the long hand alerts uses.
-        preg_match_all(
-            "/foreignId\('([a-z_]+)'\)->references\('[a-z_]+'\)->on\('([a-z_]+)'\)/",
-            $body,
-            $referenced,
-            PREG_SET_ORDER,
-        );
+    $alert = createAlertForHealthCheck($check);
 
-        // Guard the guard: every foreign key declared in the source was actually paired.
-        expect($constrained)->toHaveCount(substr_count($body, '->constrained('))
-            ->and($referenced)->toHaveCount(substr_count($body, '->references('));
+    $fresh = $check->fresh();
 
-        foreach ([...$constrained, ...$referenced] as $match) {
-            $parent = ($match[2] ?? '') !== ''
-                ? $match[2]
-                : Str::plural(Str::beforeLast($match[1], '_id'));
-
-            $edges[] = ['child' => $table, 'parent' => $parent, 'at' => $position];
-        }
-    }
-
-    // The package really does emit the two foreign keys this test guards.
-    expect($edges)->toHaveCount(2);
-
-    foreach ($edges as $edge) {
-        expect($createdAt)->toHaveKey($edge['parent']);
-
-        // A self-referencing key would be created by its own file; alerts has none.
-        $edge['parent'] === $edge['child']
-            ? expect($createdAt[$edge['parent']])->toBe($edge['at'])
-            : expect($createdAt[$edge['parent']])->toBeLessThan(
-                $edge['at'],
-                "{$edge['child']} references {$edge['parent']}, which must be created first",
-            );
-    }
+    expect($fresh->tags)->toBe(['db', 'critical'])
+        ->and($fresh->meta)->toBe(['region' => 'eu', 'tier' => 2])
+        ->and($alert->fresh()->health_check_id)->toBe($check->getKey())
+        ->and(DB::connection()->getDriverName())->toBe(DriverMatrix::driver());
 });

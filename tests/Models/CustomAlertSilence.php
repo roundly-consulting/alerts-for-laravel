@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RoundlyConsulting\Alerts\Tests\Models;
 
 use RoundlyConsulting\Alerts\AlertSilence;
+use RoundlyConsulting\Testing\Fixtures\Concerns\CountsCreations;
 
 /**
  * A host's own silence model, the way `config/alerts.php` invites: extend the
@@ -12,5 +13,7 @@ use RoundlyConsulting\Alerts\AlertSilence;
  */
 final class CustomAlertSilence extends AlertSilence
 {
+    use CountsCreations;
+
     protected $table = 'alert_silences';
 }

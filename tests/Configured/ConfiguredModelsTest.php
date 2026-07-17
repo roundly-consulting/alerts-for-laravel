@@ -27,17 +27,86 @@ use RoundlyConsulting\Alerts\Tests\Models\User;
  * It is also the pin for the FK bug: `HealthCheck::runs()` named no foreign key, so
  * Eloquent derived it from the PARENT'S CLASS NAME — a host `CustomHealthCheck` read
  * and wrote `custom_health_check_id`, a column no migration has ever created.
+ *
+ * **The swaps have moved out of this file** and into {@see SwappedModelsTestCase}, which
+ * this whole directory binds to (Pest binds a test case per directory, not per file). The
+ * four `config()->set()` calls that used to sit in the `beforeEach` below read back
+ * correctly but ran AFTER the providers booted — so every listener, observer and check
+ * registration the provider hung at boot stayed on the packaged models. That is the exact
+ * shape media #28 shipped behind, and it means these tests were, for the package's whole
+ * life, weaker than they looked.
  */
 beforeEach(function (): void {
-    config()->set('alerts.health-check', CustomHealthCheck::class);
-    config()->set('alerts.alert', CustomAlert::class);
-    config()->set('alerts.silence-model', CustomAlertSilence::class);
-    config()->set('alerts.history.model', CustomHealthCheckRun::class);
-
     Health::check(ExampleHealthCheck::class);
 
     $this->team = Team::create();
     User::create(['email' => 'oncall@x.com']);
+});
+
+/**
+ * S — the model-swap proof, driven through the REAL flows rather than a resolver check.
+ *
+ * `toHonourModelSwap` fails fast if the before-boot swap is missing, then asserts every
+ * returned model's CONCRETE class — `instanceof` is not enough, because a row created as
+ * the packaged class never fires the host's model events (permissions #31).
+ *
+ * One case per seam: each of the four is exercised through the API a host actually calls.
+ */
+it('honours a host health-check model through the monitor flow', function (): void {
+    expect('alerts.health-check')->toHonourModelSwap(CustomHealthCheck::class, function (): array {
+        $monitor = $this->team->monitorCheck(ExampleHealthCheck::class)->everyMinute()->save();
+
+        return [
+            $monitor,
+            HealthCheckModel::query()->findOrFail($monitor->getKey()),
+            $this->team->createHealthCheck('example_health_check', '* * * * *'),
+            ...$this->team->healthChecks()->get()->all(),
+        ];
+    });
+});
+
+it('honours a host alert model when a check fails', function (): void {
+    Notification::fake();
+
+    ExampleHealthCheck::$ok = false;
+    ExampleHealthCheck::$status = Status::Failed;
+
+    expect('alerts.alert')->toHonourModelSwap(CustomAlert::class, function (): array {
+        $monitor = $this->team->monitorCheck(ExampleHealthCheck::class)->everyMinute()->save();
+
+        app(RunHealthCheckAction::class)->execute(
+            HealthCheckModel::query()->findOrFail($monitor->getKey()),
+        );
+
+        return [
+            CustomAlert::query()->sole(),
+            ...$this->team->alerts()->get()->all(),
+        ];
+    });
+});
+
+it('honours a host run model through the history flow', function (): void {
+    Notification::fake();
+
+    expect('alerts.history.model')->toHonourModelSwap(CustomHealthCheckRun::class, function (): array {
+        $monitor = $this->team->monitorCheck(ExampleHealthCheck::class)->everyMinute()->save();
+
+        app(RunHealthCheckAction::class)->execute(
+            HealthCheckModel::query()->findOrFail($monitor->getKey()),
+        );
+
+        return [
+            HealthCheckRunModel::query()->sole(),
+            $monitor->latestRun(),
+            ...$monitor->runs()->get()->all(),
+        ];
+    });
+});
+
+it('honours a host silence model through the mute flow', function (): void {
+    expect('alerts.silence-model')->toHonourModelSwap(CustomAlertSilence::class, fn (): array => [
+        Health::mute('example_health_check'),
+    ]);
 });
 
 it('resolves every configured model', function (): void {

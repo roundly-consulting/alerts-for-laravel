@@ -2,121 +2,55 @@
 
 declare(strict_types=1);
 
-use Illuminate\Support\Arr;
-
 /**
- * Every `alerts.…` key the source reads must exist in the SHIPPED config file. A key
- * the code reads but the package never ships is unreachable for a host — and
- * invisible to a suite that sets the key by hand (shops shipped a whole store-credit
- * feature behind `shops.payments.*` while the config file defined `payment`, and 330
- * green tests set the same wrong key the code read).
+ * The config contract, pinned in both directions.
  *
- * Alerts had the mirror image of that bug: it SHIPPED an `escalation` key — and
- * documented it in the README and the technical docs — that no line of `src/` ever
- * read. So the contract is pinned in both directions.
- */
-it('ships every config key the source reads', function (): void {
-    /** @var array<string, mixed> $shipped */
-    $shipped = require __DIR__.'/../../config/alerts.php';
-
-    $read = alertsConfigKeysRead();
-
-    // Guard the guard: the package really does read config, so an empty scrape cannot
-    // make this test pass vacuously.
-    expect($read)->not->toBeEmpty();
-
-    foreach ($read as $key => $file) {
-        expect(Arr::has($shipped, $key))->toBeTrue(
-            "config/alerts.php ships no \"{$key}\" key, but ".basename($file).' reads it',
-        );
-    }
-});
-
-/**
- * ...and the other direction: a key the config file ships but nothing reads is a
- * documented feature that silently does nothing. `alerts.escalation` was exactly that.
- */
-it('reads every config key it ships', function (): void {
-    /** @var array<string, mixed> $shipped */
-    $shipped = require __DIR__.'/../../config/alerts.php';
-
-    $read = array_keys(alertsConfigKeysRead());
-
-    foreach (array_keys(Arr::dot($shipped)) as $dotted) {
-        // A leaf under a section the code reads whole (`checks`, `escalation`) is
-        // covered by the section's own read.
-        $sections = explode('.', (string) $dotted);
-
-        $matched = false;
-
-        for ($depth = count($sections); $depth > 0; $depth--) {
-            if (in_array(implode('.', array_slice($sections, 0, $depth)), $read, true)) {
-                $matched = true;
-
-                break;
-            }
-        }
-
-        expect($matched)->toBeTrue("config/alerts.php ships \"{$dotted}\", but nothing in src/ reads it");
-    }
-});
-
-/**
- * The model keys are read through the Support resolvers, never inline — so the swap
- * seam cannot be honoured in some call sites and bypassed in others.
- */
-it('reads every model config key through a resolver', function (): void {
-    foreach (alertsSourceFiles() as $file) {
-        if (str_contains($file, '/Support/')) {
-            continue;
-        }
-
-        expect((string) file_get_contents($file))
-            ->not->toMatch("/(?:config|ModelResolver::for)\(\s*'alerts\.(health-check|alert|silence-model|history\.model)'/");
-    }
-});
-
-/**
- * Every read of a package key names it as a literal — through `config()` or through
- * the toolkit's ModelResolver. Keys built dynamically would be invisible here, which
- * is why the package never builds one.
+ * This replaces a hand-rolled pair of regex scans over raw file text. The regex was
+ * honest work, but media #27 is the reason it goes: a regex over raw text is satisfied by
+ * a **docblock mention** of a key, and stayed green there with the fix reverted. The
+ * expectation scrapes reads from source **tokens**, so a comment is a comment and never a
+ * read.
  *
- * @return array<string, string> key => the file that reads it
+ *  - forward — every key the code reads is shipped. This is shops #18, whose whole
+ *    store-credit feature read `shops.payments.*` while the file shipped `payment.*`;
+ *    330 tests stayed green because the suite set the same wrong key the code read.
+ *  - reverse — every shipped leaf is read. Alerts had the mirror image of that bug and is
+ *    the fleet's named case for it: #24, an `escalation` key shipped and documented three
+ *    times over that no line of src/ ever read. A documented key nothing reads is dead
+ *    config that lies to the host.
+ *
+ * The bespoke "every model key is read through a resolver" rule that used to live in this
+ * file has moved to tests/ArchTest.php — it is an architecture rule, and it covers three
+ * seams `modelsResolveThroughSeam` structurally cannot see. It was kept, not replaced.
  */
-function alertsConfigKeysRead(): array
-{
-    $read = [];
+it('ships exactly the config keys it reads', function (): void {
+    expect(__DIR__.'/../../config/alerts.php')->toSatisfyConfigContract(__DIR__.'/../../src', [
+        // The four model keys are read through the toolkit's `ModelResolver::for('alerts.…')`
+        // seam rather than a `config()` call. They are real reads — they drive the whole
+        // swap — but they are not `config(` tokens, so a prefix is what makes them visible
+        // to the scraper.
+        //
+        // The four keys are named exactly rather than using the blanket `'alerts.'` the
+        // playbook suggests, and the difference is load-bearing here: `extraReadPrefixes`
+        // counts ANY string literal under the prefix as a read, wherever it appears. Alerts
+        // registers its route as `->name(config('alerts.route.name', 'alerts.health'))` —
+        // a route NAME that lives in the package's own dotted namespace. Under `'alerts.'`
+        // that default value is scraped as a read of a config key `alerts.health`, which
+        // the file does not ship and never should, and the forward direction fails on a
+        // string that was never a config key at all. Naming the seams exactly reads every
+        // real seam and nothing else.
+        'extraReadPrefixes' => [
+            'alerts.health-check',
+            'alerts.alert',
+            'alerts.silence-model',
+            'alerts.history.model',
+        ],
 
-    foreach (alertsSourceFiles() as $file) {
-        preg_match_all(
-            "/(?:config|ModelResolver::for)\(\s*'alerts\.([a-z0-9_.\-]+)'/",
-            (string) file_get_contents($file),
-            $matches,
-        );
-
-        foreach ($matches[1] as $key) {
-            $read[$key] = $file;
-        }
-    }
-
-    return $read;
-}
-
-/** @return list<string> */
-function alertsSourceFiles(): array
-{
-    $files = [];
-
-    $iterator = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator(__DIR__.'/../../src'),
-    );
-
-    /** @var SplFileInfo $file */
-    foreach ($iterator as $file) {
-        if ($file->getExtension() === 'php') {
-            $files[] = $file->getPathname();
-        }
-    }
-
-    return $files;
-}
+        // Deliberately NO `excludeFromReverse` for the provider. The testing README's own
+        // example excludes the service provider on the grounds that "a render is not a
+        // read" — but this provider's `contributesToAbout()` closure calls `config('alerts.…')`
+        // for real, and `scheduleCommand()` reads `alerts.schedule.frequency` and
+        // `alerts.history.enabled` to wire the scheduler. Excluding it would discard the
+        // only reader of several bound keys and weaken the reverse direction for nothing.
+    ]);
+});

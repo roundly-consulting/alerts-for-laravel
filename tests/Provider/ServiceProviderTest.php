@@ -6,7 +6,6 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 use RoundlyConsulting\Alerts\AlertsServiceProvider;
-use RoundlyConsulting\Alerts\Checks\DatabaseCheck;
 use RoundlyConsulting\Alerts\Health;
 use RoundlyConsulting\Alerts\HealthCheck;
 
@@ -86,47 +85,4 @@ it('registers the package commands', function (): void {
         ->toContain('alerts:list')
         ->toContain('alerts:check')
         ->toContain('alerts:prune-runs');
-});
-
-/**
- * A monitoring package's config names the host's own topology: a registered check
- * names what it watches (a connection, a disk, an internal URL) and an escalation
- * policy names the groups it pages. Neither may ever render.
- */
-it('contributes a secret-safe section to the about command', function (): void {
-    config()->set('alerts.checks', [DatabaseCheck::class]);
-    config()->set('alerts.escalation', [1 => 'payments-oncall', 3 => 'cto']);
-    config()->set('alerts.route.uri', 'internal/ops/health-x9f2');
-
-    Artisan::call('about', ['--only' => 'alerts']);
-
-    $output = Artisan::output();
-
-    // Guard the guard: an empty capture would make every negative below vacuous.
-    expect($output)->toContain('Health check model')
-        ->toContain('1 registered')
-        ->toContain('2 level(s)');
-
-    // The on-call vocabulary, the class of check being run, and the (deliberately
-    // obscure) endpoint path are the host's — presence and counts only.
-    expect($output)->not->toContain('payments-oncall')
-        ->not->toContain('cto')
-        ->not->toContain('DatabaseCheck')
-        ->not->toContain('internal/ops/health-x9f2');
-});
-
-it('reports the configured models and switches in the about section', function (): void {
-    config()->set('alerts.silence', false);
-    config()->set('alerts.history.enabled', false);
-    config()->set('alerts.schedule.enabled', false);
-
-    Artisan::call('about', ['--only' => 'alerts']);
-
-    $output = Artisan::output();
-
-    expect($output)->toContain('HealthCheck')
-        ->toContain('AlertSilence')
-        ->toContain('HealthCheckRun')
-        ->toContain('OFF')
-        ->toContain('NONE');
 });
