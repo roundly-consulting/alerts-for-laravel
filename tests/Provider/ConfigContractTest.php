@@ -24,7 +24,7 @@ declare(strict_types=1);
  * seams `modelsResolveThroughSeam` structurally cannot see. It was kept, not replaced.
  */
 it('ships exactly the config keys it reads', function (): void {
-    expect(__DIR__.'/../../config/alerts.php')->toSatisfyConfigContract(__DIR__.'/../../src', [
+    expect(__DIR__.'/../../config/alerts.php')->toSatisfyConfigContract([__DIR__.'/../../src', __DIR__.'/../../database'], [
         // The four model keys are read through the toolkit's `ModelResolver::for('alerts.…')`
         // seam rather than a `config()` call. They are real reads — they drive the whole
         // swap — but they are not `config(` tokens, so a prefix is what makes them visible
@@ -44,6 +44,10 @@ it('ships exactly the config keys it reads', function (): void {
             'alerts.alert',
             'alerts.silence-model',
             'alerts.history.model',
+            // `alerts.key_type` is read through `KeyType::fromConfig('alerts.key_type')`
+            // in the migrations (hence `database` in the scanned dirs) — it decides the
+            // shipped morph column types, but it is not a `config(` token.
+            'alerts.key_type',
         ],
 
         // Deliberately NO `excludeFromReverse` for the provider. The testing README's own

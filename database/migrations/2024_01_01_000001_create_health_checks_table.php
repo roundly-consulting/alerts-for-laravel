@@ -5,14 +5,17 @@ declare(strict_types=1);
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use RoundlyConsulting\PackageToolkit\Enums\KeyType;
 
 return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('health_checks', function (Blueprint $table): void {
+        $keyType = KeyType::fromConfig('alerts.key_type');
+
+        Schema::create('health_checks', function (Blueprint $table) use ($keyType): void {
             $table->id();
-            $table->morphs('notifiable');
+            $table->morphKey('notifiable', $keyType, nullable: false);
             $table->string('health_check');
             $table->string('frequency');
             $table->unsignedSmallInteger('max_attempts')->default(1);

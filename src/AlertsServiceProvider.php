@@ -14,11 +14,14 @@ use RoundlyConsulting\Alerts\Support\AlertModel;
 use RoundlyConsulting\Alerts\Support\AlertSilenceModel;
 use RoundlyConsulting\Alerts\Support\HealthCheckModel;
 use RoundlyConsulting\Alerts\Support\HealthCheckRunModel;
+use RoundlyConsulting\PackageToolkit\Concerns\RegistersBlueprintMacros;
 use RoundlyConsulting\PackageToolkit\Package;
 use RoundlyConsulting\PackageToolkit\PackageServiceProvider;
 
 final class AlertsServiceProvider extends PackageServiceProvider
 {
+    use RegistersBlueprintMacros;
+
     public function configurePackage(Package $package): void
     {
         $package
@@ -47,6 +50,10 @@ final class AlertsServiceProvider extends PackageServiceProvider
     public function boot(): void
     {
         parent::boot();
+
+        // The migrations' key-type-aware morph columns are macros, so they must
+        // exist before a host runs `php artisan migrate`.
+        $this->registerBlueprintMacros();
 
         $this->registerCommandSchedule();
         $this->registerCheckList();

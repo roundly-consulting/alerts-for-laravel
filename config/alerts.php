@@ -50,6 +50,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Key Type
+    |--------------------------------------------------------------------------
+    |
+    | The key type used for the polymorphic notifiable columns on health checks,
+    | alerts, and silences. Use "uuid" or "ulid" when your notifiable models use
+    | UUID/ULID primary keys, otherwise leave it as "bigint". Your notifiables must
+    | share one key type; set this to match them. Any unrecognized value falls back
+    | to "bigint".
+    |
+    | Supported: "bigint", "uuid", "ulid"
+    |
+    */
+
+    'key_type' => env('ALERTS_KEY_TYPE', 'bigint'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Health Check Job
     |--------------------------------------------------------------------------
     |
