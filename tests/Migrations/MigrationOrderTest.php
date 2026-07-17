@@ -94,9 +94,16 @@ it('runs on the driver the environment declares', function (): void {
 });
 
 /**
- * The `json` tags/meta columns and the morph columns are what the drivers render
+ * The `jsonb` tags/meta columns and the morph columns are what the drivers render
  * differently. Pinning a round-trip on whatever engine the leg configured proves the
  * columns are usable rather than merely creatable.
+ *
+ * `tags` is a JSON array, so `toBe` still holds: `jsonb` reorders object KEYS, never array
+ * ELEMENTS. `meta` is an object and is therefore asserted key-by-key — `jsonb` sorts keys by
+ * (length, bytes), which puts `tier` ahead of `region` on Postgres, so a whole-array `toBe`
+ * would pin storage order the engine never promised. Each key keeps a strict `toBe` rather
+ * than relaxing the whole assertion to `toEqual`: this test exists to prove the driver
+ * renders the column faithfully, and `toEqual` would let `tier` come back the string "2".
  */
 it('round-trips the alert columns on the configured engine', function (): void {
     $check = createHealthCheckWithNotifiable();
@@ -108,7 +115,8 @@ it('round-trips the alert columns on the configured engine', function (): void {
     $fresh = $check->fresh();
 
     expect($fresh->tags)->toBe(['db', 'critical'])
-        ->and($fresh->meta)->toBe(['region' => 'eu', 'tier' => 2])
+        ->and($fresh->meta['region'] ?? null)->toBe('eu')
+        ->and($fresh->meta['tier'] ?? null)->toBe(2)
         ->and($alert->fresh()->health_check_id)->toBe($check->getKey())
         ->and(DB::connection()->getDriverName())->toBe(DriverMatrix::driver());
 });

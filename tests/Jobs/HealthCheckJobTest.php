@@ -43,14 +43,11 @@ it('creates alert and sends alert notification when health check failed', functi
     $job = new HealthCheckJob($healthCheck);
     $this->app->call([$job, 'handle']);
 
-    // The scalar columns are matched in the database; `meta` deliberately is not. It is a
-    // `json` column, and Postgres ships no equality operator for `json` (only `jsonb` has
-    // one), so a `where meta = '…'` is not merely wrong there — it is a hard
-    // `operator does not exist: json = unknown` error. On SQLite the same clause is a
-    // plain text comparison and passes, which is why this only ever surfaced on the real
-    // engine. The payload is asserted through the model's cast below, which is
-    // driver-independent and a stronger check anyway (it compares a decoded structure, not
-    // a byte-for-byte encoding whose key order is incidental).
+    // `meta` stays out of the database predicate even though `jsonb` now has an `=`
+    // operator. Postgres would compare it semantically, but SQLite compares the column as
+    // text, so a multi-key `castAsJson` would pin insertion order there — trading the old
+    // driver-dependence for a new one. The merged payload is asserted through the cast
+    // below, which is what the job actually contracts.
     $this->assertDatabaseHas('alerts', [
         'notifiable_type' => Team::class,
         'notifiable_id' => 1,
@@ -59,7 +56,11 @@ it('creates alert and sends alert notification when health check failed', functi
         'message' => 'Something terrible happened',
     ]);
 
-    expect(Alert::query()->sole()->meta)->toBe([
+    // `toEqual`, not `toBe`: the contract is which keys hold which values, not the order
+    // they come back in. `jsonb` normalises object keys (shortest first, then bytewise), so
+    // `meta` sorts ahead of `definition-meta` on Postgres — a `toBe` here would pin storage
+    // order rather than the merge, and would pass only on SQLite.
+    expect(Alert::query()->sole()->meta)->toEqual([
         'definition-meta' => ['specific-thing' => 'yes'],
         'meta' => ['ufo' => 'exists'],
     ]);

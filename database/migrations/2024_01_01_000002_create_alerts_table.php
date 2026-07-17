@@ -17,7 +17,7 @@ return new class extends Migration
             $table->string('status')->default('failed');
             $table->unsignedSmallInteger('escalation_level')->default(0);
             $table->string('message')->nullable();
-            $table->json('meta')->nullable();
+            $table->jsonb('meta')->nullable();
             $table->timestamp('triggered_at');
             $table->timestamp('recovered_at')->nullable();
             $table->timestamps();

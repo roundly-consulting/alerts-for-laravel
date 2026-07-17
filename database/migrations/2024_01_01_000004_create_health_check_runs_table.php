@@ -16,7 +16,7 @@ return new class extends Migration
             $table->string('status');
             $table->unsignedInteger('duration_ms')->default(0);
             $table->string('message')->nullable();
-            $table->json('meta')->nullable();
+            $table->jsonb('meta')->nullable();
             $table->timestamp('ran_at')->index();
 
             $table->index(['health_check_id', 'ran_at']);
