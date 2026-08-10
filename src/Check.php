@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RoundlyConsulting\Alerts;
 
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\Notification as NotificationFacade;
 use Illuminate\Support\Facades\RateLimiter;
@@ -124,7 +125,7 @@ abstract class Check
     public function notify(object $notifiable): bool
     {
         $this->notificationThrottle->by(
-            key: spl_object_hash($notifiable),
+            key: $this->throttleKey($notifiable),
         );
 
         return (bool) RateLimiter::attempt(
@@ -133,6 +134,32 @@ abstract class Check
             callback: fn () => NotificationFacade::send($notifiable, $this->notification($notifiable)),
             decaySeconds: $this->notificationThrottle->decaySeconds,
         );
+    }
+
+    /**
+     * The renotification bucket: a stable identity for (this scheduled check,
+     * this notifiable).
+     *
+     * This used to be `spl_object_hash($notifiable)`, which is a PHP OBJECT
+     * HANDLE — not an identity. Every scheduled run is a fresh queued job that
+     * re-queries the health check and its notifiable, so the handle differed on
+     * every run and `decay_minutes` suppressed nothing at all: a `* * * * *`
+     * check notified once a minute for the whole life of an incident, whatever
+     * the configured interval said. (The handle is not even stable within one
+     * process — PHP reuses it once an object is freed.)
+     *
+     * The health check's own id is part of the key too, because one check class
+     * may be scheduled several times against the same notifiable with different
+     * `meta` — watching a different service each time. Those are separate jobs
+     * and must renotify separately.
+     */
+    protected function throttleKey(object $notifiable): string
+    {
+        $scope = $notifiable instanceof Model
+            ? $notifiable->getMorphClass().':'.((string) $notifiable->getKey())
+            : $notifiable::class;
+
+        return $scope.':'.((string) ($this->healthCheck?->getKey() ?? ''));
     }
 
     abstract public function check(): CheckResult;
