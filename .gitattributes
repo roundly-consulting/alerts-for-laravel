@@ -10,3 +10,4 @@
 /phpstan.neon.dist  export-ignore
 /pint.json          export-ignore
 /tests              export-ignore
+/art                export-ignore
