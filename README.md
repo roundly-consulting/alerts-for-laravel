@@ -191,8 +191,8 @@ A closure may return a `CheckResult` or a plain `bool`.
 #### Result severity
 
 A `CheckResult` carries a `Status` (`ok`, `warning`, `failed`, `skipped`). A `warning` opens an
-alert and notifies just like a `failed`; a `skipped` result records nothing. The legacy `isOk`
-flag is still available.
+alert and notifies just like a `failed`; a `skipped` result records nothing. `isOk` is a
+shorthand for `status === Status::Ok`.
 
 ```php
 use RoundlyConsulting\Alerts\CheckResult;

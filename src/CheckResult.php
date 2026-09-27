@@ -18,7 +18,7 @@ final class CheckResult
     public readonly Status $status;
 
     /**
-     * Backward-compatible derived flag: true only for a healthy result.
+     * Shorthand: true only for a healthy (`Status::Ok`) result.
      */
     public bool $isOk {
         get => $this->status === Status::Ok;
