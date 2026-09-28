@@ -575,6 +575,7 @@ Everything above runs the same code through the injectable `HealthManager` — t
 ```php
 use RoundlyConsulting\Alerts\Actions\MuteAlertsAction;
 use RoundlyConsulting\Alerts\Actions\ScheduleHealthCheckAction;
+use RoundlyConsulting\Alerts\DataTransferObjects\ScheduleHealthCheckData;
 use RoundlyConsulting\Alerts\HealthManager;
 
 final class MaintenanceController
