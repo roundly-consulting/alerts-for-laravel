@@ -411,3 +411,40 @@ it('refuses a schedule with an invalid cron before recording it', function (): v
         $fake->assertNothingMonitored();
     }
 })->throws(RoundlyConsulting\Alerts\Exceptions\InvalidCronExpression::class);
+
+it('records a skipped run without touching the alert, like the pipeline', function (): void {
+    $fake = Health::fake();
+    $team = Team::create();
+    ExampleHealthCheck::$status = Status::Skipped;
+
+    Health::for($team)->run(ExampleHealthCheck::class);
+
+    $fake->assertChecked('example_health_check');
+    $fake->assertNothingAlerted();
+    $fake->assertNothingRecovered();
+    expect(Health::for($team)->status())->toBe(Status::Ok);
+});
+
+it('keeps an open alert in step with a failure below the gate', function (): void {
+    $fake = Health::fake();
+    $team = Team::create();
+    $status = Status::Failed;
+
+    Health::define('flip', function () use (&$status): RoundlyConsulting\Alerts\CheckResult {
+        return new RoundlyConsulting\Alerts\CheckResult($status, $status->value);
+    })->failAfter(2)->recoverAfter(2);
+
+    Health::for($team)->run('flip');
+    Health::for($team)->run('flip');
+    $fake->assertAlerted('flip');
+
+    // One success resets the failure count without closing the alert; the next
+    // warning is below failAfter again, yet the open alert must report it.
+    $status = Status::Ok;
+    Health::for($team)->run('flip');
+    $status = Status::Warning;
+    Health::for($team)->run('flip');
+
+    expect(Health::for($team)->report()->checks()[0]->status)->toBe(Status::Warning)
+        ->and(Health::for($team)->report()->checks()[0]->message)->toBe('warning');
+});
