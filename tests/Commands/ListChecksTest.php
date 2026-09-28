@@ -84,3 +84,14 @@ it('prefers the scheduled row over an on-demand one for the frequency', function
     expect(Artisan::output())->toContain('Every Hour')
         ->not->toContain('on demand');
 });
+
+it('shows a check as muted by a global or tag silence, as the pipeline would', function (string $key) {
+    Health::check(ExampleHealthCheck::class);
+
+    Team::create()->monitorCheck(ExampleHealthCheck::class)->tags(['db'])->save();
+    Health::silences()->mute($key);
+
+    Artisan::call('alerts:list');
+
+    expect(Artisan::output())->toContain('| yes ');
+})->with(['global' => '*', 'row tag' => 'db']);

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RoundlyConsulting\Alerts\Commands;
 
 use Illuminate\Console\Command;
+use RoundlyConsulting\Alerts\AlertSilence;
 use RoundlyConsulting\Alerts\Check;
 use RoundlyConsulting\Alerts\HealthCheck;
 use RoundlyConsulting\Alerts\HealthManager;
@@ -48,7 +49,7 @@ final class ListChecks extends Command
                 $row === null ? '—' : $this->frequencyLabel($check, $row->frequency),
                 $row?->latestRun()?->ran_at?->toDateTimeString() ?? '—',
                 $status?->status->label() ?? '—',
-                $health->silences()->isMuted($check->key()) ? 'yes' : 'no',
+                $this->isMuted($health, $check, $row) ? 'yes' : 'no',
                 $this->tagList($check, $row),
             ];
         })->all();
@@ -93,11 +94,35 @@ final class ListChecks extends Command
         return $check->frequencies()[$cron] ?? $cron;
     }
 
+    /**
+     * Muted the way the run pipeline decides it: a silence on the key, on any of the
+     * check's (or its row's) tags, or the global '*'.
+     */
+    private function isMuted(HealthManager $health, Check $check, ?HealthCheck $row): bool
+    {
+        foreach ([$check->key(), ...$this->tags($check, $row), AlertSilence::GLOBAL_KEY] as $key) {
+            if ($health->silences()->isMuted($key)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function tagList(Check $check, ?HealthCheck $row): string
     {
-        $rowTags = $row === null ? [] : ($row->tags ?? []);
-        $tags = array_values(array_unique([...$check->tags(), ...$rowTags]));
+        $tags = $this->tags($check, $row);
 
         return $tags === [] ? '—' : implode(', ', $tags);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function tags(Check $check, ?HealthCheck $row): array
+    {
+        $rowTags = $row === null ? [] : ($row->tags ?? []);
+
+        return array_values(array_unique([...$check->tags(), ...$rowTags]));
     }
 }
