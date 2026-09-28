@@ -166,3 +166,24 @@ it('ignores silences when the master switch is off', function () {
 
     expect(Health::silences()->isMuted('example_health_check'))->toBeFalse();
 });
+
+it('clears the muted flag once failures continue after the window', function () {
+    Notification::fake();
+    Event::fake([HealthCheckFailed::class]);
+
+    $team = Team::create();
+    $healthCheck = mutedHealthCheck($team);
+
+    Health::silences()->mute('example_health_check', until: now()->addMinutes(30));
+    app(RunHealthCheckAction::class)->execute($healthCheck->fresh());
+
+    expect(Health::report()->checks()[0]->muted)->toBeTrue();
+    Event::assertNotDispatched(HealthCheckFailed::class);
+
+    $this->travel(31)->minutes();
+    app(RunHealthCheckAction::class)->execute($healthCheck->fresh());
+
+    Event::assertDispatched(HealthCheckFailed::class);
+    expect(Health::report()->checks()[0]->muted)->toBeFalse()
+        ->and(Alert::query()->sole()->meta)->not->toHaveKey(MonitorOptions::MUTED);
+});

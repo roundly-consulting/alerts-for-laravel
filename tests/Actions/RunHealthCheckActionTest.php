@@ -115,3 +115,31 @@ it('throws when notifiable is missing', function () {
 
     app(RunHealthCheckAction::class)->execute($healthCheck);
 })->throws(RoundlyConsulting\Alerts\Exceptions\InvalidNotifiableForHealthCheck::class);
+
+it('keeps an open alert in step with the latest failing result', function () {
+    Notification::fake();
+
+    $healthCheck = createHealthCheckWithNotifiable();
+
+    ExampleHealthCheck::$status = Status::Warning;
+    ExampleHealthCheck::$message = 'Disk 85%';
+    app(RunHealthCheckAction::class)->execute($healthCheck->fresh());
+
+    ExampleHealthCheck::$status = Status::Failed;
+    ExampleHealthCheck::$message = 'Disk 100% FULL';
+    app(RunHealthCheckAction::class)->execute($healthCheck->fresh());
+
+    $check = Health::report()->checks()[0];
+
+    expect(RoundlyConsulting\Alerts\Alert::query()->count())->toBe(1)
+        ->and($check->status)->toBe(Status::Failed)
+        ->and($check->message)->toBe('Disk 100% FULL')
+        ->and(Health::status())->toBe(Status::Failed);
+
+    ExampleHealthCheck::$status = Status::Warning;
+    ExampleHealthCheck::$message = 'Disk 90%';
+    app(RunHealthCheckAction::class)->execute($healthCheck->fresh());
+
+    expect(Health::report()->checks()[0]->status)->toBe(Status::Warning)
+        ->and(Health::report()->checks()[0]->message)->toBe('Disk 90%');
+});

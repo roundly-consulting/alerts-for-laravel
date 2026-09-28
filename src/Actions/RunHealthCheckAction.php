@@ -136,20 +136,25 @@ final readonly class RunHealthCheckAction
         CheckResult $result,
         bool $muted,
     ): void {
+        $alert = $this->retrieveLatestAlert($healthCheck);
+
+        if ($alert !== null && $alert->recovered_at === null) {
+            // An open alert describes the incident as it is NOW: a warning that turned
+            // into a failure (or back) must not keep reporting the first result, and a
+            // mute that ended must stop flagging it.
+            $this->follow($alert, $result, $muted);
+        } else {
+            $alert = null;
+        }
+
         // Flap gate: only open/notify once the failure has persisted long enough.
         if ($healthCheck->consecutive_failures < $options->failAfter()) {
             return;
         }
 
-        $alert = $this->retrieveLatestAlert($healthCheck);
-
-        if ($alert === null || $alert->recovered_at !== null) {
-            $alert = $this->createAlert($healthCheck, $result, $muted);
-        }
+        $alert ??= $this->createAlert($healthCheck, $result, $muted);
 
         if ($muted) {
-            $this->flagMuted($alert);
-
             return;
         }
 
@@ -254,23 +259,32 @@ final readonly class RunHealthCheckAction
             ->exists();
     }
 
-    private function flagMuted(Alert $alert): void
+    private function follow(Alert $alert, CheckResult $result, bool $muted): void
     {
-        $meta = $alert->meta ?? [];
-        $meta[MonitorOptions::MUTED] = true;
-
-        $alert->update(['meta' => $meta]);
+        $alert->update([
+            'status' => $result->status,
+            'message' => $result->storedMessage(),
+            'meta' => $this->alertMeta($result, $muted),
+        ]);
     }
 
-    private function createAlert(HealthCheck $healthCheck, CheckResult $result, bool $muted): Alert
+    /**
+     * @return array<string, mixed>
+     */
+    private function alertMeta(CheckResult $result, bool $muted): array
     {
-        $notifiable = $this->notifiable($healthCheck);
-
         $meta = $result->meta;
 
         if ($muted) {
             $meta[MonitorOptions::MUTED] = true;
         }
+
+        return $meta;
+    }
+
+    private function createAlert(HealthCheck $healthCheck, CheckResult $result, bool $muted): Alert
+    {
+        $notifiable = $this->notifiable($healthCheck);
 
         return AlertModel::class()::create([
             'notifiable_type' => $notifiable->getMorphClass(),
@@ -280,7 +294,7 @@ final readonly class RunHealthCheckAction
             'escalation_level' => 0,
             'triggered_at' => now(),
             'message' => $result->storedMessage(),
-            'meta' => $meta,
+            'meta' => $this->alertMeta($result, $muted),
         ]);
     }
 
