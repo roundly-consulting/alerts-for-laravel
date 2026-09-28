@@ -19,8 +19,10 @@
 
 # Alerts for Laravel
 
-Schedule recurring health checks against any notifiable model and dispatch throttled alert
-notifications when a check fails or recovers.
+Schedule recurring health checks against any notifiable model. When a check fails, the package
+opens an alert and sends throttled notifications. When it recovers, the package closes the alert and
+dispatches a `HealthCheckRecovered` event (no notification is sent on recovery — see [Events](#events)
+to send one).
 
 The package gives you three building blocks:
 
@@ -76,6 +78,10 @@ return [
     'alert' => \RoundlyConsulting\Alerts\Alert::class,
     'job' => \RoundlyConsulting\Alerts\Jobs\HealthCheckJob::class,
 
+    // Key type of the polymorphic notifiable columns: "bigint", "uuid" or "ulid".
+    // Set it BEFORE running the migrations when your notifiables use UUID/ULID keys.
+    'key_type' => env('ALERTS_KEY_TYPE', 'bigint'),
+
     // Check classes registered globally on boot.
     'checks' => [
         // \RoundlyConsulting\Alerts\Checks\DatabaseCheck::class,
@@ -116,17 +122,21 @@ return [
 | `health-check` | `class-string` | `RoundlyConsulting\Alerts\HealthCheck` | — | Model that schedules checks. |
 | `alert` | `class-string` | `RoundlyConsulting\Alerts\Alert` | — | Model that records alerts. |
 | `job` | `class-string` | `RoundlyConsulting\Alerts\Jobs\HealthCheckJob` | — | Job that runs a due check. |
+| `key_type` | `string` | `bigint` | `ALERTS_KEY_TYPE` | Key type of the `notifiable_id` columns on `health_checks`, `alerts` and `alert_silences`: `bigint`, `uuid` or `ulid` (anything else falls back to `bigint`). The migrations read it, so set it **before** `php artisan migrate`. All your notifiables must share one key type. |
 | `checks` | `array` | `[]` | — | Check classes/instances registered on boot. |
-| `schedule.enabled` | `bool` | `true` | `ALERTS_SCHEDULE` | Auto-register the perform command on the scheduler. |
+| `schedule.enabled` | `bool` | `true` | `ALERTS_SCHEDULE` | Auto-register the perform command on the scheduler. Pruning (below) is scheduled either way. |
 | `schedule.frequency` | `string` | `everyMinute` | `ALERTS_SCHEDULE_FREQUENCY` | Scheduler method used (`everyMinute`, `everyFiveMinutes`, `hourly`, …). |
 | `route.uri` | `string` | `health` | `ALERTS_ROUTE_URI` | URI for the opt-in JSON status endpoint. |
 | `route.name` | `string` | `alerts.health` | — | Route name for the status endpoint. |
 | `silence` | `bool` | `true` | `ALERTS_SILENCE` | Master switch for maintenance-window muting. |
 | `silence-model` | `class-string` | `RoundlyConsulting\Alerts\AlertSilence` | — | Model used to persist mute records. |
-| `history.enabled` | `bool` | `true` | `ALERTS_HISTORY` | Record every run (status + latency) and auto-schedule pruning. |
+| `history.enabled` | `bool` | `true` | `ALERTS_HISTORY` | Record every run (status + latency) and auto-schedule `alerts:prune-runs` daily (also when `schedule.enabled` is off). |
 | `history.retention_days` | `int` | `30` | `ALERTS_HISTORY_RETENTION` | How long runs are kept before `alerts:prune-runs` deletes them. |
 | `history.model` | `class-string` | `RoundlyConsulting\Alerts\HealthCheckRun` | — | Model used to record runs. |
 | `escalation` | `array` | `[]` | — | Global default escalation policy (threshold ⇒ group), applied to any check that declares none of its own. |
+
+The switches (`schedule.enabled`, `silence`, `history.enabled`) accept booleans and the usual env
+strings: `1`/`true`/`on`/`yes` and `0`/`false`/`off`/`no`.
 
 Every model key above may point at your own subclass of the packaged model — the package
 resolves each one through a single seam, so a swapped model is honoured everywhere (relations,
@@ -176,6 +186,20 @@ Health::check(HttpPingCheck::make('https://api.example.com')->timeout(5)->expect
 | `StorageCheck` | free space is comfortable | space dips below the warning threshold | space is below `minimumBytes()` |
 | `HttpPingCheck` | the expected status returns | the response is slower than `slowerThan()` | the status is unexpected or the request times out |
 
+Each check registers under a key derived from its class (`database_check`, `http_ping_check`, …),
+and registering a second instance under the same key replaces the first. To watch several targets
+with one built-in, give each instance its own key with `as()`. The name follows the key:
+
+```php
+Health::check(DatabaseCheck::make('mysql')->as('mysql_database'));   // name "Mysql Database"
+Health::check(DatabaseCheck::make('pgsql')->as('pgsql_database'));
+
+Health::for($team)->monitor('mysql_database')->everyMinute()->save();
+```
+
+The bundled notification includes the failure reason (the failing result's message) in the mail and
+in `toArray()['message']`.
+
 #### Inline (closure) checks
 
 For one-off checks, define one inline instead of writing a class:
@@ -187,13 +211,17 @@ Health::define('redis-up', fn () => Redis::ping() ? CheckResult::ok() : CheckRes
     ->notifyUsing(RedisDownNotification::class);
 ```
 
-A closure may return a `CheckResult` or a plain `bool`.
+A closure may return a `CheckResult` or a plain `bool`. An inline check has no class, so you run
+and monitor it by its key: `Health::for($team)->run('redis-up')` uses the throttle and options
+declared on `define()`, and `Health::for($team)->monitor('redis-up')` starts from them (any builder
+call overrides them).
 
 #### Result severity
 
 A `CheckResult` carries a `Status` (`ok`, `warning`, `failed`, `skipped`). A `warning` opens an
-alert and notifies just like a `failed`; a `skipped` result records nothing. `isOk` is a
-shorthand for `status === Status::Ok`.
+alert and notifies just like a `failed`. A `skipped` result is still written to the run history, but
+it changes no counters and opens or closes no alert. `isOk` is a shorthand for
+`status === Status::Ok`.
 
 ```php
 use RoundlyConsulting\Alerts\CheckResult;
@@ -306,7 +334,10 @@ $team->monitorCheck(DiskUsageCheck::class)->everyFiveMinutes()->save();
 
 Available presets: `everyMinute()`, `everyFiveMinutes()`, `everyTenMinutes()`,
 `everyFifteenMinutes()`, `everyThirtyMinutes()`, `hourly()`, `daily()`, `weekly()`,
-`monthly()`, plus `frequency('hourly')` and `cron('15 3 * * *')`.
+`monthly()`, plus `frequency('hourly')` and `cron('15 3 * * *')`. A cron expression has five
+fields with `*`, lists, ranges and steps, and accepts day and month names (`cron('0 9 * * MON-FRI')`).
+It is validated on `save()`: an expression the scheduler could not evaluate throws
+`InvalidCronExpression` and nothing is stored.
 
 The same builder accepts a full set of declarative options — flap debounce, recovery
 confirmation, per-check timeout, tags, channel routing, and an escalation policy:
@@ -352,7 +383,8 @@ the handle is a security boundary.
 ### 6. Run due checks
 
 The command is auto-registered on the scheduler when `schedule.enabled` is `true` (the
-default). To wire it yourself instead, disable that flag and add it to `routes/console.php`:
+default). To wire it yourself instead, disable that flag and add it to `routes/console.php`
+(the daily `alerts:prune-runs` stays scheduled while history is enabled):
 
 ```php
 use Illuminate\Support\Facades\Schedule;
@@ -365,7 +397,9 @@ php artisan alerts:perform-health-checks
 ```
 
 The command calls `Health::runDue()`, which dispatches `HealthCheckJob` for every health check
-whose cron frequency is due and returns how many it queued. Call it yourself from anywhere:
+whose cron frequency is due and returns how many it queued. A row whose cron cannot be evaluated
+(written by a seeder or by hand, since `save()` validates) is skipped and reported to your exception
+handler, and the rows after it are still dispatched. Call it yourself from anywhere:
 
 ```php
 $queued = Health::runDue(); // int
@@ -374,7 +408,9 @@ $queued = Health::runDue(); // int
 ### 7. Run a check now
 
 Run a check synchronously against an owner — it performs the same alert/notify/recover side
-effects as the queued job and returns the `CheckResult`:
+effects as the queued job and returns the `CheckResult`. A class-string runs the instance you
+registered for that class (with its configuration), and passing an instance runs that instance.
+Neither changes the registered check:
 
 ```php
 use RoundlyConsulting\Alerts\Facades\Health;
@@ -384,7 +420,16 @@ $result->status; // Status::Ok | Warning | Failed | Skipped
 
 // Run one of the team's scheduled rows as-is (another owner's row is refused):
 Health::for($team)->run($team->healthChecks()->first());
+
+// An inline check has no class — run it by its registered key:
+Health::for($team)->run('redis-up');
 ```
+
+Running a check now never starts monitoring it. When the owner already has a scheduled row for
+the check, the run goes through that row and shares its counters, history and alerts. Otherwise
+the package seeds an **on-demand** row (`frequency` is `null`) that keeps the owner's counters,
+history and alerts for that check between manual runs. The scheduler never queues it, and
+`monitors()` does not list it. To monitor a check on a schedule, use `monitor()` (§5).
 
 ### 8. Read current status
 
@@ -398,7 +443,7 @@ foreach ($report->checks() as $check) {
 }
 
 Health::status();                            // Status roll-up
-Health::report(['critical']);                // only checks carrying one of these tags
+Health::report(['critical']);                // only checks tagged with one of these (row tags or the check's tags())
 Health::for($team)->report(['critical']);    // one owner, optionally tag-filtered
 Health::for($team)->status();                // that owner's roll-up
 $report->whereTag('db');                     // filter an in-memory report
@@ -418,7 +463,7 @@ own routes file so the package never adds routes by default:
 use RoundlyConsulting\Alerts\Facades\Health;
 
 Health::routes();          // GET /health        -> { "status": "...", "checks": [...] }
-// GET /health?tag=critical -> only checks carrying the "critical" tag
+// GET /health?tag=critical -> only checks tagged "critical" (on the row or by the check's tags())
 ```
 
 ### 9. Flap detection & recovery confirmation
@@ -504,7 +549,8 @@ silences.
 
 While muted, runs and counters are still maintained but `HealthCheckFailed` /
 `HealthCheckRecovered` and notifications are suppressed, and touched alerts are flagged
-`meta['muted']` so the status report shows them as muted.
+`meta['muted']` so the status report shows them as muted. The flag follows the latest run, so it
+clears when failures continue after the window ends.
 
 ### 13. Run history, uptime & latency
 
@@ -520,8 +566,8 @@ $check->uptimePercentage(now()->subDay()); // % of non-alertable runs in the win
 $check->p95LatencyMs(now()->subDay());     // 95th-percentile duration in ms
 ```
 
-Retention is pruned by `alerts:prune-runs` (auto-scheduled daily when history is enabled), or
-from code with `Health::prune()`:
+Retention is pruned by `alerts:prune-runs`, auto-scheduled daily whenever history is enabled
+(whatever `schedule.enabled` says), or from code with `Health::prune()`:
 
 ```bash
 php artisan alerts:prune-runs --days=30
@@ -538,12 +584,17 @@ Health::prune(7);   // older than 7 days
 the moment the budget elapses (via `SIGALRM`); elsewhere (web SAPI / Windows) it is a
 best-effort post-hoc report — the check runs to completion and is marked failed if it overran.
 A timed-out check flows through the normal failed-result path with a `CheckTimedOut` exception
-recorded in meta.
+recorded in meta. Inside a queue worker the job's own `--timeout` alarm is kept: a check budget
+longer than the time the job has left never extends it, and the worker's alarm is re-armed after
+the check.
 
 ### 15. Exception-safe checks
 
 A check's `check()` never needs a `try/catch` — any thrown exception is converted into a clean
-failed result and recorded as a normal alert + run, so a bad check never fails the queue job:
+failed result and recorded as a normal alert + run, so a bad check never fails the queue job. An
+exception message can be huge (a `QueryException` embeds the SQL). The run and alert rows store at
+most `CheckResult::MAX_STORED_MESSAGE_LENGTH` (1000) characters. The full text stays on the
+returned result and in `meta['exception_message']`:
 
 ```php
 Health::define('flaky', function () {
@@ -616,18 +667,28 @@ and silences from memory, and records every call, including those made through t
 ```php
 $fake = Health::fake();
 
-Health::for($team)->run(DiskUsageCheck::class);
+Health::define('disk-full', fn () => CheckResult::failed('Disk full'));
+
+Health::for($team)->run(DiskUsageCheck::class);    // healthy: checked, nothing to recover
+Health::for($team)->run('disk-full');             // failing: alerted
 $team->monitorCheck(DiskUsageCheck::class)->hourly()->save();
 Health::silences()->mute('db', for: $team);
 $this->artisan('alerts:prune-runs', ['--days' => 7]);
 
 $fake->assertChecked('disk_usage_check');
-$fake->assertAlerted('disk_usage_check');          // not recorded while a fake silence matches
+$fake->assertNothingRecovered();                  // a first healthy run recovers nothing
+$fake->assertAlerted('disk-full');                // not recorded while a fake silence matches
 $fake->assertMonitored(DiskUsageCheck::class, $team);
 $fake->assertMuted('db', $team);
 $fake->assertPruned(7);
 $fake->assertNothingRanDue();
 ```
+
+A run through the fake passes the same gates as a real one, kept in memory per owner and check. A
+thrown exception or an overrun timeout becomes a failed result. An alert is recorded only once
+`failAfter` consecutive failures are reached, and not while a fake silence matches. A recovery is
+recorded only when an open alert closes after `recoverAfter` consecutive successes. The options
+come from the row you run, a monitor you recorded for that owner, or an inline check's `define()`.
 
 | Assertion | Negative |
 |---|---|
@@ -648,9 +709,27 @@ The host application can listen for:
 - `RoundlyConsulting\Alerts\Events\HealthCheckFailed` — dispatched with the `Alert` when a
   check fails.
 - `RoundlyConsulting\Alerts\Events\HealthCheckRecovered` — dispatched with the `Alert` when
-  a previously failing check passes again.
+  a previously failing check passes again (once per recovery, even if two runs overlap). No
+  notification is sent on recovery; send your own from a listener:
 - `RoundlyConsulting\Alerts\Events\HealthCheckEscalated` — dispatched with the `Alert` and the
   `fromLevel` / `toLevel` each time an open alert reaches a new escalation level.
+
+```php
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Notification;
+use RoundlyConsulting\Alerts\Events\HealthCheckRecovered;
+
+Event::listen(function (HealthCheckRecovered $event): void {
+    $event->alert->healthCheck?->forEachNotifiable(
+        fn (object $notifiable) => Notification::send($notifiable, new CheckRecoveredNotification($event->alert)),
+    );
+});
+```
+
+An open alert always reflects the latest failing result: its `status` and `message` follow it (a
+warning that turns into a failure reports as failed), so the status report and
+`Health::status()` never freeze on the first result. There is at most one open alert per scheduled
+check, even when two runs of it overlap.
 
 ## Integrates with
 

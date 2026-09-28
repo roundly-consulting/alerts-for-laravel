@@ -1,6 +1,6 @@
 {
     "name": "roundly-consulting/alerts-for-laravel",
-    "description": "Schedule recurring health checks against any notifiable model and dispatch throttled alert notifications when they fail or recover.",
+    "description": "Schedule recurring health checks against any notifiable model, send throttled alert notifications when they fail and dispatch events when they fail, escalate or recover.",
     "keywords": [
         "roundly-consulting",
         "laravel",
