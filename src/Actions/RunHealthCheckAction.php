@@ -68,7 +68,7 @@ final readonly class RunHealthCheckAction
             return $result;
         }
 
-        $this->handleFailure($check, $healthCheck, $options, $result, $muted);
+        $this->handleFailure($check->withResult($result), $healthCheck, $options, $result, $muted);
 
         return $result;
     }

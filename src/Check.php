@@ -20,6 +20,11 @@ abstract class Check
      */
     protected ?string $customKey = null;
 
+    /**
+     * The result of the run this instance is notifying about; null outside a run.
+     */
+    protected ?CheckResult $result = null;
+
     public function __construct(
         public ?HealthCheck $healthCheck = null,
     ) {
@@ -37,6 +42,29 @@ abstract class Check
         $clone->notificationThrottle = $clone->resolveNotificationThrottle($healthCheck);
 
         return $clone;
+    }
+
+    /**
+     * Return a copy of this check carrying the result of the run it notifies about,
+     * so a notification can say why the check failed.
+     *
+     * @internal set by the run pipeline before it notifies
+     */
+    public function withResult(CheckResult $result): static
+    {
+        $clone = clone $this;
+        $clone->result = $result;
+
+        return $clone;
+    }
+
+    /**
+     * The result being notified about — the failing (or warning) result of the current
+     * run — or null when the check is not being run by the pipeline.
+     */
+    public function result(): ?CheckResult
+    {
+        return $this->result;
     }
 
     protected function resolveNotificationThrottle(?HealthCheck $healthCheck): Limit

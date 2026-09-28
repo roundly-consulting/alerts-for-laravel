@@ -11,17 +11,24 @@ use RoundlyConsulting\Alerts\Check;
 /**
  * Default notification shipped for built-in and inline checks so consumers are not
  * forced to write their own. Override per check via Check::notification().
+ *
+ * Without an explicit message it says why the check failed: the message of the result
+ * the run pipeline is notifying about (bounded like the stored one).
  */
 final class HealthCheckFailedNotification extends Notification
 {
+    private readonly string $message;
+
     /**
      * @param  list<string>|null  $channels
      */
     public function __construct(
         private readonly Check $check,
-        private readonly string $message = '',
+        string $message = '',
         private readonly ?array $channels = null,
-    ) {}
+    ) {
+        $this->message = $message !== '' ? $message : (string) $check->result()?->storedMessage();
+    }
 
     /**
      * @return list<string>

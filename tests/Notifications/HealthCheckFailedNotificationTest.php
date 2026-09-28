@@ -28,3 +28,20 @@ it('exposes an array payload', function () {
         ->toHaveKey('name', 'Database Check')
         ->toHaveKey('message', 'oops');
 });
+
+it('carries the failing result\'s message when sent by the pipeline', function () {
+    Illuminate\Support\Facades\Notification::fake();
+
+    $team = RoundlyConsulting\Alerts\Tests\Models\Team::create();
+    $user = RoundlyConsulting\Alerts\Tests\Models\User::create(['email' => 'ops@x.com']);
+
+    RoundlyConsulting\Alerts\Facades\Health::define('redis-up', fn () => RoundlyConsulting\Alerts\CheckResult::failed('Redis down: connection refused'));
+    RoundlyConsulting\Alerts\Facades\Health::for($team)->run(RoundlyConsulting\Alerts\Facades\Health::find('redis-up'));
+
+    Illuminate\Support\Facades\Notification::assertSentTo(
+        $user,
+        HealthCheckFailedNotification::class,
+        fn (HealthCheckFailedNotification $notification): bool => $notification->toArray($user)['message'] === 'Redis down: connection refused'
+            && in_array('Redis down: connection refused', $notification->toMail($user)->introLines, true),
+    );
+});
