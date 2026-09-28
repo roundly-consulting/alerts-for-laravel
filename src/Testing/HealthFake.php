@@ -12,15 +12,16 @@ use PHPUnit\Framework\Assert as PHPUnit;
 use RoundlyConsulting\Alerts\AlertSilence;
 use RoundlyConsulting\Alerts\Check;
 use RoundlyConsulting\Alerts\CheckResult;
+use RoundlyConsulting\Alerts\Checks\ClosureCheck;
 use RoundlyConsulting\Alerts\DataTransferObjects\ScheduleHealthCheckData;
-use RoundlyConsulting\Alerts\Enums\Status;
 use RoundlyConsulting\Alerts\Exceptions\InvalidHealthCheck;
 use RoundlyConsulting\Alerts\HealthCheck;
 use RoundlyConsulting\Alerts\HealthManager;
-use RoundlyConsulting\Alerts\Status\CheckStatus;
 use RoundlyConsulting\Alerts\Status\HealthReport;
 use RoundlyConsulting\Alerts\Support\AlertSilenceModel;
 use RoundlyConsulting\Alerts\Support\HealthCheckModel;
+use RoundlyConsulting\Alerts\Support\MonitorOptions;
+use RoundlyConsulting\Alerts\Support\SafeCheck;
 
 /**
  * Test double for the Health manager, installed by `Health::fake()`. It keeps the
@@ -28,11 +29,21 @@ use RoundlyConsulting\Alerts\Support\HealthCheckModel;
  * writing a row, answers reports and silences from memory, and records every
  * mutating call — through the facade, an injected manager, `for()`, `silences()` or
  * the UsesHealthChecks trait — for the assertions below.
+ *
+ * A run goes through the same gates as the real pipeline, kept in memory per
+ * notifiable and check: a thrown exception or an overrun timeout is a failed result,
+ * an alert fires only once `failAfter` consecutive failures are reached (and not while
+ * muted), and a recovery is recorded only when an open alert closes after
+ * `recoverAfter` consecutive successes. The options come from the row being run, a
+ * monitor recorded for the notifiable, or an inline check's `define()`.
  */
 final class HealthFake extends HealthManager
 {
-    /** @var list<array{key: string, name: string, notifiable: string, result: CheckResult, tags: list<string>}> */
+    /** @var list<string> */
     private array $runs = [];
+
+    /** @var array<string, FakeMonitor> */
+    private array $monitors = [];
 
     /** @var list<string> */
     private array $alerted = [];
@@ -80,35 +91,36 @@ final class HealthFake extends HealthManager
             }
 
             $instance = $check->healthCheck();
+            $options = $check->options();
+            $tags = $check->effectiveTags();
         } else {
             $instance = $this->resolveCheck($check);
+            [$options, $rowTags] = $this->optionsFor($notifiable, $instance);
+            $tags = array_values(array_unique([...$rowTags, ...$instance->tags()]));
         }
 
         $key = $instance->key();
-        $result = $instance->check();
+        $result = SafeCheck::run($instance, $options->timeout(), $key);
 
-        $this->runs[] = [
-            'key' => $key,
-            'name' => $instance->name(),
-            'notifiable' => $this->identify($notifiable),
-            'result' => $result,
-            'tags' => $instance->tags(),
-        ];
+        $this->runs[] = $key;
 
-        if ($result->status->isAlertable() && ! $this->silenced([$key, ...$instance->tags(), '*'], $notifiable)) {
-            $this->alerted[] = $key;
-        }
+        $muted = $this->silenced([$key, ...$tags, AlertSilence::GLOBAL_KEY], $notifiable);
 
-        if ($result->isOk) {
-            $this->recovered[] = $key;
-        }
+        $outcome = $this->monitorFor($notifiable, $key, $instance->name(), $tags)
+            ->apply($result, $options, $muted);
+
+        match ($outcome) {
+            true => $this->alerted[] = $key,
+            false => $this->recovered[] = $key,
+            null => null,
+        };
 
         return $result;
     }
 
     /**
-     * Built from the runs this fake recorded — the latest result per notifiable and
-     * check — never from the database.
+     * Built from the monitors this fake ran — the open alert per notifiable and check,
+     * as the real report is — never from the database.
      *
      * @param  list<string>|null  $tags
      */
@@ -116,29 +128,19 @@ final class HealthFake extends HealthManager
     {
         $scope = $notifiable === null ? null : $this->identify($notifiable);
 
-        $latest = [];
+        $checks = [];
 
-        foreach ($this->runs as $run) {
-            if ($scope !== null && $run['notifiable'] !== $scope) {
+        foreach ($this->monitors as $monitor) {
+            if ($scope !== null && $monitor->notifiable !== $scope) {
                 continue;
             }
 
-            if ($tags !== null && $tags !== [] && array_intersect($tags, $run['tags']) === []) {
+            if ($tags !== null && $tags !== [] && ! $monitor->hasAnyTag($tags)) {
                 continue;
             }
 
-            $latest[$run['notifiable'].'|'.$run['key']] = $run;
+            $checks[] = $monitor->status();
         }
-
-        $checks = array_map(fn (array $run): CheckStatus => new CheckStatus(
-            key: $run['key'],
-            name: $run['name'],
-            status: $run['result']->status->isAlertable() ? $run['result']->status : Status::Ok,
-            message: $run['result']->status->isAlertable() ? $run['result']->message : null,
-            tags: $run['tags'],
-            uptime: $this->uptime($run['key'], $run['notifiable']),
-            muted: $this->silenced([$run['key'], ...$run['tags'], '*'], null, $run['notifiable']),
-        ), array_values($latest));
 
         return new HealthReport($checks);
     }
@@ -148,6 +150,9 @@ final class HealthFake extends HealthManager
      */
     public function scheduleFor(Model $notifiable, ScheduleHealthCheckData $data): HealthCheck
     {
+        // Validated first, as the real action does: an invalid cron is refused, not recorded.
+        $frequency = $data->cronFrequency();
+
         $this->monitored[] = [
             'key' => $data->key(),
             'notifiable' => $this->identify($notifiable),
@@ -158,7 +163,7 @@ final class HealthFake extends HealthManager
             'notifiable_type' => $notifiable->getMorphClass(),
             'notifiable_id' => $notifiable->getKey(),
             'health_check' => $data->key(),
-            'frequency' => $data->cronFrequency(),
+            'frequency' => $frequency,
             'max_attempts' => $data->maxAttempts,
             'decay_minutes' => $data->decayMinutes,
             'tags' => $data->tags === [] ? null : $data->tags,
@@ -274,12 +279,12 @@ final class HealthFake extends HealthManager
 
     public function assertChecked(string $key): void
     {
-        PHPUnit::assertContains($key, array_column($this->runs, 'key'), "The check [$key] was not run.");
+        PHPUnit::assertContains($key, $this->runs, "The check [$key] was not run.");
     }
 
     public function assertNothingChecked(): void
     {
-        PHPUnit::assertSame([], array_column($this->runs, 'key'), 'Unexpected check runs were recorded.');
+        PHPUnit::assertSame([], $this->runs, 'Unexpected check runs were recorded.');
     }
 
     public function assertAlerted(string $key): void
@@ -436,16 +441,42 @@ final class HealthFake extends HealthManager
             : $silence->notifiable_type.':'.((string) $silence->notifiable_id);
     }
 
-    private function uptime(string $key, string $notifiable): float
+    /**
+     * The options a run uses when it is not given a row: those of the latest monitor
+     * recorded for this notifiable and check (the row the real run would go through),
+     * else an inline check's `define()`, else the defaults.
+     *
+     * @return array{0: MonitorOptions, 1: list<string>}
+     */
+    private function optionsFor(Model $notifiable, Check $check): array
     {
-        $runs = array_filter(
-            $this->runs,
-            fn (array $run): bool => $run['key'] === $key && $run['notifiable'] === $notifiable,
-        );
+        $scope = $this->identify($notifiable);
 
-        $healthy = array_filter($runs, fn (array $run): bool => ! $run['result']->status->isAlertable());
+        /** @var array<int|string, string> $escalation */
+        $escalation = config('alerts.escalation', []);
 
-        return round((count($healthy) / count($runs)) * 100, 2);
+        foreach (array_reverse($this->monitored) as $monitor) {
+            if ($monitor['key'] === $check->key() && $monitor['notifiable'] === $scope) {
+                return [MonitorOptions::fromMeta($monitor['data']->metaWithOptions(), $escalation), $monitor['data']->tags];
+            }
+        }
+
+        $meta = $check instanceof ClosureCheck ? $check->scheduleDefaults()->metaWithOptions() : [];
+
+        return [MonitorOptions::fromMeta($meta, $escalation), []];
+    }
+
+    /**
+     * @param  list<string>  $tags
+     */
+    private function monitorFor(Model $notifiable, string $key, string $name, array $tags): FakeMonitor
+    {
+        $scope = $this->identify($notifiable);
+
+        $monitor = $this->monitors[$scope.'|'.$key] ??= new FakeMonitor($key, $scope, $name, $tags);
+        $monitor->describe($name, $tags);
+
+        return $monitor;
     }
 
     /**

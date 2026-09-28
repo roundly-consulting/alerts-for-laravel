@@ -15,15 +15,13 @@ use RoundlyConsulting\Alerts\Enums\Status;
 use RoundlyConsulting\Alerts\Events\HealthCheckEscalated;
 use RoundlyConsulting\Alerts\Events\HealthCheckFailed;
 use RoundlyConsulting\Alerts\Events\HealthCheckRecovered;
-use RoundlyConsulting\Alerts\Exceptions\CheckTimedOut;
 use RoundlyConsulting\Alerts\Exceptions\InvalidNotifiableForHealthCheck;
 use RoundlyConsulting\Alerts\HealthCheck;
 use RoundlyConsulting\Alerts\Support\AlertModel;
 use RoundlyConsulting\Alerts\Support\AlertSilenceModel;
 use RoundlyConsulting\Alerts\Support\HealthCheckRunModel;
 use RoundlyConsulting\Alerts\Support\MonitorOptions;
-use RoundlyConsulting\Alerts\Support\Timeout;
-use Throwable;
+use RoundlyConsulting\Alerts\Support\SafeCheck;
 
 /**
  * Runs a single scheduled health check and applies its side effects through one
@@ -79,19 +77,8 @@ final readonly class RunHealthCheckAction
     private function runCheck(Check $check, HealthCheck $healthCheck, MonitorOptions $options): array
     {
         $start = (int) hrtime(true);
-        $timeout = $options->timeout();
 
-        try {
-            $result = $timeout === null
-                ? $check->check()
-                : Timeout::run($timeout, $healthCheck->health_check, fn (): CheckResult => $check->check());
-        } catch (CheckTimedOut $e) {
-            $result = CheckResult::fromException($e, $e->getMessage(), [
-                'timed_out_after' => $e->seconds,
-            ]);
-        } catch (Throwable $e) {
-            $result = CheckResult::fromException($e);
-        }
+        $result = SafeCheck::run($check, $options->timeout(), $healthCheck->health_check);
 
         $durationMs = (int) round(((int) hrtime(true) - $start) / 1_000_000);
 

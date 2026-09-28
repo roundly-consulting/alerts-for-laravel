@@ -49,13 +49,17 @@ it('records runs without sending notifications', function (): void {
     $this->assertDatabaseEmpty('health_checks');
 });
 
-it('records recoveries for healthy checks', function (): void {
+it('records a recovery when a failing check passes again', function (): void {
     $fake = Health::fake();
+    $team = Team::create();
 
-    Health::for(Team::create())->run(ExampleHealthCheck::class);
+    ExampleHealthCheck::$ok = false;
+    Health::for($team)->run(ExampleHealthCheck::class);
+    ExampleHealthCheck::$ok = true;
+    Health::for($team)->run(ExampleHealthCheck::class);
 
+    $fake->assertAlerted('example_health_check');
     $fake->assertRecovered('example_health_check');
-    $fake->assertNothingAlerted();
 });
 
 it('does not record an alert for a check muted in the fake', function (): void {
@@ -121,8 +125,11 @@ it('keeps silences in memory and flags muted checks in the report', function ():
         ->and(Health::silences()->active())->toHaveCount(2)
         ->and(Health::silences()->active($other)->pluck('key')->all())->toBe(['*']);
 
+    // A muted failure still opens the alert, flagged muted — as the pipeline does.
+    ExampleHealthCheck::$ok = false;
     Health::for($team)->run(ExampleHealthCheck::class);
     expect(Health::report()->checks()[0]->muted)->toBeTrue();
+    $fake->assertNothingAlerted();
 
     expect(Health::silences()->unmute('db', $team))->toBe(1)
         ->and(Health::silences()->unmute('*'))->toBe(1)
@@ -288,7 +295,12 @@ it('fails an assertNothing* once the matching call was recorded', function (Clos
         fn (HealthFake $fake) => $fake->assertNothingAlerted(),
     ],
     'assertNothingRecovered' => [
-        fn (Team $team) => Health::for($team)->run(ExampleHealthCheck::class),
+        function (Team $team): void {
+            ExampleHealthCheck::$ok = false;
+            Health::for($team)->run(ExampleHealthCheck::class);
+            ExampleHealthCheck::$ok = true;
+            Health::for($team)->run(ExampleHealthCheck::class);
+        },
         fn (HealthFake $fake) => $fake->assertNothingRecovered(),
     ],
     'assertNothingMonitored via the trait' => [
@@ -316,3 +328,86 @@ it('fails an assertNothing* once the matching call was recorded', function (Clos
         fn (HealthFake $fake) => $fake->assertNothingPruned(),
     ],
 ])->throws(ExpectationFailedException::class);
+
+it('records no recovery for a healthy run that had nothing to recover', function (): void {
+    $fake = Health::fake();
+    $team = Team::create();
+
+    Health::for($team)->run(ExampleHealthCheck::class);
+    $fake->assertNothingRecovered();
+
+    ExampleHealthCheck::$ok = false;
+    Health::for($team)->run(ExampleHealthCheck::class);
+    ExampleHealthCheck::$ok = true;
+    Health::for($team)->run(ExampleHealthCheck::class);
+
+    $fake->assertRecovered('example_health_check');
+});
+
+it('turns a throwing check into a failed result like the real pipeline', function (): void {
+    $fake = Health::fake();
+
+    Health::define('flaky', function (): never {
+        throw new RuntimeException('upstream exploded');
+    });
+
+    $result = Health::for(Team::create())->run('flaky');
+
+    expect($result->status)->toBe(Status::Failed)
+        ->and($result->message)->toBe('upstream exploded')
+        ->and($result->meta['exception'])->toBe(RuntimeException::class);
+
+    $fake->assertAlerted('flaky');
+});
+
+it('gates alerts and recoveries on failAfter and recoverAfter', function (): void {
+    $fake = Health::fake();
+    $team = Team::create();
+    $healthy = false;
+
+    Health::define('f3', function () use (&$healthy): bool {
+        return $healthy;
+    })->failAfter(3)->recoverAfter(2);
+
+    Health::for($team)->run('f3');
+    Health::for($team)->run('f3');
+    $fake->assertNothingAlerted();
+    expect(Health::for($team)->status())->toBe(Status::Ok);
+
+    Health::for($team)->run('f3');
+    $fake->assertAlerted('f3');
+
+    $healthy = true;
+    Health::for($team)->run('f3');
+    $fake->assertNothingRecovered();
+    // the alert is still open until the recovery is confirmed
+    expect(Health::for($team)->status())->toBe(Status::Failed);
+
+    Health::for($team)->run('f3');
+    $fake->assertRecovered('f3');
+    expect(Health::for($team)->status())->toBe(Status::Ok);
+});
+
+it('applies the options of a monitor recorded for the notifiable', function (): void {
+    $fake = Health::fake();
+    $team = Team::create();
+    ExampleHealthCheck::$ok = false;
+
+    Health::for($team)->monitor(ExampleHealthCheck::class)->failAfter(2)->save();
+
+    Health::for($team)->run(ExampleHealthCheck::class);
+    $fake->assertNothingAlerted();
+
+    Health::for($team)->run(ExampleHealthCheck::class);
+    $fake->assertAlerted('example_health_check');
+});
+
+it('refuses a schedule with an invalid cron before recording it', function (): void {
+    $fake = Health::fake();
+
+    try {
+        Health::for(Team::create())->monitor(ExampleHealthCheck::class)->cron('0 9 * * FUNDAY')->save();
+    } finally {
+        $fake->assertNothingMonitored();
+    }
+})->throws(RoundlyConsulting\Alerts\Exceptions\InvalidCronExpression::class);
