@@ -6,7 +6,9 @@ namespace RoundlyConsulting\Alerts\DataTransferObjects;
 
 use RoundlyConsulting\Alerts\Check;
 use RoundlyConsulting\Alerts\Enums\Frequency;
+use RoundlyConsulting\Alerts\Exceptions\InvalidCronExpression;
 use RoundlyConsulting\Alerts\Exceptions\InvalidHealthCheck;
+use RoundlyConsulting\Alerts\Support\CronSchedule;
 use RoundlyConsulting\Alerts\Support\MonitorOptions;
 
 final readonly class ScheduleHealthCheckData
@@ -51,9 +53,15 @@ final readonly class ScheduleHealthCheckData
         return $this->check;
     }
 
+    /**
+     * The cron expression to persist: a preset name resolved to its expression, then
+     * validated so an expression the scheduler could never evaluate is refused here.
+     *
+     * @throws InvalidCronExpression
+     */
     public function cronFrequency(): string
     {
-        return Frequency::toCron($this->frequency);
+        return CronSchedule::validate(Frequency::toCron($this->frequency));
     }
 
     /**

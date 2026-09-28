@@ -99,3 +99,25 @@ it('rejects an inverted range', function () {
 it('rejects a zero step', function () {
     new CronSchedule('*/0 * * * *');
 })->throws(InvalidCronExpression::class);
+
+it('understands named weekdays and months', function (string $expression, string $at, bool $due) {
+    Carbon::setTestNow($at);
+
+    expect((new CronSchedule($expression))->isDue())->toBe($due);
+})->with([
+    'weekday range on a monday' => ['0 9 * * MON-FRI', '2026-09-28 09:00:00', true],
+    'weekday range on a sunday' => ['0 9 * * MON-FRI', '2026-09-27 09:00:00', false],
+    'lower-case list' => ['0 9 * * sat,sun', '2026-09-27 09:00:00', true],
+    'named month' => ['0 0 1 JAN *', '2027-01-01 00:00:00', true],
+    'named month elsewhere' => ['0 0 1 JAN *', '2026-10-01 00:00:00', false],
+]);
+
+it('rejects an unknown name', function () {
+    new CronSchedule('0 9 * * FUNDAY');
+})->throws(InvalidCronExpression::class);
+
+it('validates an expression and hands back its canonical form', function () {
+    expect(CronSchedule::validate('  */5 * * * *'))->toBe('*/5 * * * *');
+
+    CronSchedule::validate('61 * * * *');
+})->throws(InvalidCronExpression::class);

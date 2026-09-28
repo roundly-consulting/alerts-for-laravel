@@ -26,3 +26,21 @@ it('persists a schedule with its options folded into meta', function (): void {
         ->and($row->tags)->toBe(['db'])
         ->and($row->meta)->toBe(['connection' => 'pgsql', MonitorOptions::FAIL_AFTER => 2]);
 });
+
+it('refuses to save a schedule whose cron it could never evaluate', function (): void {
+    $team = Team::create();
+
+    try {
+        RoundlyConsulting\Alerts\Facades\Health::for($team)->monitor('example_health_check')->cron('0 9 * * FUNDAY')->save();
+    } finally {
+        expect(RoundlyConsulting\Alerts\HealthCheck::query()->count())->toBe(0);
+    }
+})->throws(RoundlyConsulting\Alerts\Exceptions\InvalidCronExpression::class);
+
+it('saves a schedule on named weekdays', function (): void {
+    $team = Team::create();
+
+    $row = RoundlyConsulting\Alerts\Facades\Health::for($team)->monitor('example_health_check')->cron('0 9 * * MON-FRI')->save();
+
+    expect($row->frequency)->toBe('0 9 * * MON-FRI');
+});

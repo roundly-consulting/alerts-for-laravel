@@ -12,8 +12,9 @@ use RoundlyConsulting\Alerts\Exceptions\InvalidCronExpression;
  * Minimal native 5-field cron "is due now" evaluator.
  *
  * Supports standard `minute hour day-of-month month day-of-week` expressions with
- * `*`, lists (`1,2,3`), ranges (`1-5`), steps (`* / 5`, `1-30/2`) and the common
- * named aliases (`@hourly`, `@daily`, …). It deliberately covers only what the
+ * `*`, lists (`1,2,3`), ranges (`1-5`), steps (`* / 5`, `1-30/2`), day and month
+ * names (`MON-FRI`, `JAN,JUL`, case-insensitive) and the common named aliases
+ * (`@hourly`, `@daily`, …). It deliberately covers only what the
  * package's own `Check::frequencies()` and consumers realistically need, keeping the
  * runtime dependency list policy-clean (no third-party cron vendor).
  */
@@ -28,6 +29,17 @@ final class CronSchedule
         '@daily' => '0 0 * * *',
         '@midnight' => '0 0 * * *',
         '@hourly' => '0 * * * *',
+    ];
+
+    /** @var array<string, int> */
+    private const MONTH_NAMES = [
+        'jan' => 1, 'feb' => 2, 'mar' => 3, 'apr' => 4, 'may' => 5, 'jun' => 6,
+        'jul' => 7, 'aug' => 8, 'sep' => 9, 'oct' => 10, 'nov' => 11, 'dec' => 12,
+    ];
+
+    /** @var array<string, int> */
+    private const DAY_NAMES = [
+        'sun' => 0, 'mon' => 1, 'tue' => 2, 'wed' => 3, 'thu' => 4, 'fri' => 5, 'sat' => 6,
     ];
 
     /** @var list<int> */
@@ -58,8 +70,22 @@ final class CronSchedule
         $this->minutes = $this->parseField($parts[0], 0, 59, $expression);
         $this->hours = $this->parseField($parts[1], 0, 23, $expression);
         $this->daysOfMonth = $this->parseField($parts[2], 1, 31, $expression);
-        $this->months = $this->parseField($parts[3], 1, 12, $expression);
-        $this->daysOfWeek = $this->parseField($parts[4], 0, 7, $expression);
+        $this->months = $this->parseField($parts[3], 1, 12, $expression, self::MONTH_NAMES);
+        $this->daysOfWeek = $this->parseField($parts[4], 0, 7, $expression, self::DAY_NAMES);
+    }
+
+    /**
+     * Throw InvalidCronExpression unless the expression can be evaluated, returning it
+     * trimmed. Called when a schedule is saved, so a bad expression fails the caller
+     * instead of every later scheduler tick.
+     *
+     * @throws InvalidCronExpression
+     */
+    public static function validate(string $expression): string
+    {
+        new self($expression);
+
+        return mb_trim($expression);
     }
 
     public function isDue(?CarbonInterface $now = null): bool
@@ -79,9 +105,10 @@ final class CronSchedule
     }
 
     /**
+     * @param  array<string, int>  $names
      * @return list<int>
      */
-    private function parseField(string $field, int $min, int $max, string $expression): array
+    private function parseField(string $field, int $min, int $max, string $expression, array $names = []): array
     {
         $values = [];
 
@@ -98,7 +125,7 @@ final class CronSchedule
                 $step = (int) $stepRaw;
             }
 
-            [$start, $end] = $this->resolveRange($segment, $min, $max, $expression);
+            [$start, $end] = $this->resolveRange($segment, $min, $max, $expression, $names);
 
             for ($value = $start; $value <= $end; $value += $step) {
                 $values[$value] = $value;
@@ -111,9 +138,10 @@ final class CronSchedule
     }
 
     /**
+     * @param  array<string, int>  $names
      * @return array{0: int, 1: int}
      */
-    private function resolveRange(string $segment, int $min, int $max, string $expression): array
+    private function resolveRange(string $segment, int $min, int $max, string $expression, array $names): array
     {
         if ($segment === '*' || $segment === '') {
             return [$min, $max];
@@ -121,8 +149,8 @@ final class CronSchedule
 
         if (str_contains($segment, '-')) {
             [$startRaw, $endRaw] = explode('-', $segment, 2);
-            $start = $this->parseNumber($startRaw, $min, $max, $expression);
-            $end = $this->parseNumber($endRaw, $min, $max, $expression);
+            $start = $this->parseNumber($startRaw, $min, $max, $expression, $names);
+            $end = $this->parseNumber($endRaw, $min, $max, $expression, $names);
 
             if ($start > $end) {
                 throw InvalidCronExpression::malformed($expression);
@@ -131,13 +159,22 @@ final class CronSchedule
             return [$start, $end];
         }
 
-        $value = $this->parseNumber($segment, $min, $max, $expression);
+        $value = $this->parseNumber($segment, $min, $max, $expression, $names);
 
         return [$value, $value];
     }
 
-    private function parseNumber(string $raw, int $min, int $max, string $expression): int
+    /**
+     * @param  array<string, int>  $names
+     */
+    private function parseNumber(string $raw, int $min, int $max, string $expression, array $names): int
     {
+        $named = $names[mb_strtolower($raw)] ?? null;
+
+        if ($named !== null) {
+            return $named;
+        }
+
         if (! ctype_digit($raw)) {
             throw InvalidCronExpression::malformed($expression);
         }
