@@ -31,7 +31,7 @@ use RoundlyConsulting\Alerts\Support\HealthCheckModel;
  */
 final class HealthFake extends HealthManager
 {
-    /** @var list<array{key: string, notifiable: string, result: CheckResult, tags: list<string>}> */
+    /** @var list<array{key: string, name: string, notifiable: string, result: CheckResult, tags: list<string>}> */
     private array $runs = [];
 
     /** @var list<string> */
@@ -82,7 +82,6 @@ final class HealthFake extends HealthManager
             $instance = $check->healthCheck();
         } else {
             $instance = $this->resolveCheck($check);
-            $this->register($instance);
         }
 
         $key = $instance->key();
@@ -90,6 +89,7 @@ final class HealthFake extends HealthManager
 
         $this->runs[] = [
             'key' => $key,
+            'name' => $instance->name(),
             'notifiable' => $this->identify($notifiable),
             'result' => $result,
             'tags' => $instance->tags(),
@@ -132,7 +132,7 @@ final class HealthFake extends HealthManager
 
         $checks = array_map(fn (array $run): CheckStatus => new CheckStatus(
             key: $run['key'],
-            name: $this->find($run['key'])?->name() ?? $run['key'],
+            name: $run['name'],
             status: $run['result']->status->isAlertable() ? $run['result']->status : Status::Ok,
             message: $run['result']->status->isAlertable() ? $run['result']->message : null,
             tags: $run['tags'],

@@ -170,9 +170,9 @@ class HealthManager
     }
 
     /**
-     * Replace a registered check instance.
+     * Put a check instance into the registry under its key.
      *
-     * @internal used by the run path to keep the registry in step with the instance it runs
+     * @internal used by HealthFake to carry the real manager's registrations over
      */
     public function register(Check $check): static
     {
@@ -182,21 +182,45 @@ class HealthManager
     }
 
     /**
-     * Normalise a class-string or instance into a Check, validating its type.
+     * Normalise what a caller asked to run into a Check, without touching the registry.
+     *
+     * - an instance runs as given;
+     * - a registered key runs the registered instance (the only name an inline
+     *   `define()` check has);
+     * - a Check class-string runs the instance registered for that class — so its
+     *   configuration (a URL, a connection) applies — and a fresh instance only when
+     *   none is registered. A class registered under several keys is ambiguous and
+     *   must be run by key.
      *
      * @internal
      */
     public function resolveCheck(string|Check $check): Check
     {
-        if (is_string($check)) {
-            $check = new $check;
+        if ($check instanceof Check) {
+            return $check;
         }
 
-        if (! $check instanceof Check) {
+        $registered = $this->find($check);
+
+        if ($registered !== null) {
+            return $registered;
+        }
+
+        if (! class_exists($check)) {
+            throw InvalidHealthCheck::notRegistered($check);
+        }
+
+        if (! is_subclass_of($check, Check::class)) {
             throw InvalidHealthCheck::doesntExtendBaseCheck($check);
         }
 
-        return $check;
+        $instances = $this->all()->filter(fn (Check $instance): bool => $instance::class === $check);
+
+        if ($instances->count() > 1) {
+            throw InvalidHealthCheck::ambiguous($check, array_keys($instances->all()));
+        }
+
+        return $instances->first() ?? new $check;
     }
 
     /*
@@ -213,7 +237,6 @@ class HealthManager
     {
         if (! $check instanceof HealthCheck) {
             $check = $this->resolveCheck($check);
-            $this->register($check);
         }
 
         return $this->container->make(RunHealthCheckNowAction::class)->execute($notifiable, $check);

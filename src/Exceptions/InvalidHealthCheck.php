@@ -11,12 +11,24 @@ use RoundlyConsulting\Alerts\HealthCheck;
 
 final class InvalidHealthCheck extends Exception
 {
-    public static function doesntExtendBaseCheck(object $check): self
+    public static function doesntExtendBaseCheck(object|string $check): self
     {
-        $checkClassName = $check::class;
+        $checkClassName = is_string($check) ? $check : $check::class;
         $baseCheckClass = Check::class;
 
         return new self("Class [$checkClassName] does not extend base check class [$baseCheckClass]");
+    }
+
+    /**
+     * @param  list<string>  $keys
+     */
+    public static function ambiguous(string $class, array $keys): self
+    {
+        return new self(sprintf(
+            'Check class [%s] is registered under several keys; run it by key: %s.',
+            $class,
+            implode(', ', $keys),
+        ));
     }
 
     public static function notRegistered(string $key): self

@@ -40,7 +40,7 @@ final readonly class RunHealthCheckNowAction
             return $this->runHealthCheck->execute($check);
         }
 
-        return $this->runHealthCheck->execute($this->row($check, $notifiable));
+        return $this->runHealthCheck->execute($this->row($check, $notifiable), $check);
     }
 
     private function row(Check $check, Model $notifiable): HealthCheck

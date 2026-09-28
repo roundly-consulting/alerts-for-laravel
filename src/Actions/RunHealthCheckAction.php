@@ -6,6 +6,7 @@ namespace RoundlyConsulting\Alerts\Actions;
 
 use Illuminate\Database\Eloquent\Model;
 use RoundlyConsulting\Alerts\Alert;
+use RoundlyConsulting\Alerts\AlertSilence;
 use RoundlyConsulting\Alerts\Check;
 use RoundlyConsulting\Alerts\CheckResult;
 use RoundlyConsulting\Alerts\Enums\Status;
@@ -30,7 +31,9 @@ use Throwable;
  *        -> mute gate -> flap gate -> open/escalate/notify | recover gate -> recover
  *
  * All per-check declarations are read off the persisted HealthCheck row (not a
- * transient Check instance) so they survive queue serialization.
+ * transient Check instance) so they survive queue serialization. The check itself is
+ * the registered instance for the row's key, unless the caller hands one in (a run-now
+ * of a specific instance) — the registry is never modified to make that happen.
  *
  * @internal the pipeline behind the queued HealthCheckJob and RunHealthCheckNowAction;
  *           hosts (and a custom `alerts.job`) run a scheduled row with
@@ -38,9 +41,9 @@ use Throwable;
  */
 final readonly class RunHealthCheckAction
 {
-    public function execute(HealthCheck $healthCheck): CheckResult
+    public function execute(HealthCheck $healthCheck, ?Check $check = null): CheckResult
     {
-        $check = $healthCheck->healthCheck();
+        $check = $check === null ? $healthCheck->healthCheck() : $check->withHealthCheck($healthCheck);
         $options = $healthCheck->options();
 
         [$result, $durationMs] = $this->runCheck($check, $healthCheck, $options);
@@ -55,7 +58,7 @@ final readonly class RunHealthCheckAction
 
         $this->updateCounters($healthCheck, $result);
 
-        $muted = $this->isMuted($healthCheck);
+        $muted = $this->isMuted($healthCheck, $check);
 
         if ($result->isOk) {
             $this->handleRecovery($healthCheck, $options, $muted);
@@ -232,13 +235,18 @@ final readonly class RunHealthCheckAction
         }
     }
 
-    private function isMuted(HealthCheck $healthCheck): bool
+    private function isMuted(HealthCheck $healthCheck, Check $check): bool
     {
         if (config('alerts.silence', true) !== true) {
             return false;
         }
 
-        $keys = [$healthCheck->health_check, ...$healthCheck->effectiveTags(), '*'];
+        $keys = array_values(array_unique([
+            $healthCheck->health_check,
+            ...$healthCheck->effectiveTags(),
+            ...$check->tags(),
+            AlertSilence::GLOBAL_KEY,
+        ]));
 
         return AlertSilenceModel::query()
             ->matching($keys, $healthCheck->notifiable)

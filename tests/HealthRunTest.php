@@ -92,3 +92,70 @@ it('survives a failure message longer than any varchar column', function () {
         ->toBeLessThanOrEqual(CheckResult::MAX_STORED_MESSAGE_LENGTH)
         ->and(RoundlyConsulting\Alerts\HealthCheckRun::sole()->meta['exception_message'])->toBe($long);
 });
+
+it('runs an inline check by its registered key', function () {
+    Notification::fake();
+    $team = Team::create();
+
+    Health::define('redis-up', fn () => CheckResult::failed('Redis down'));
+
+    $result = Health::for($team)->run('redis-up');
+
+    expect($result->status)->toBe(Status::Failed)
+        ->and($team->healthChecks()->sole()->health_check)->toBe('redis-up');
+});
+
+it('refuses a string that is neither a registered key nor a check class', function () {
+    Health::for(Team::create())->run('nothing-registered');
+})->throws(InvalidHealthCheck::class, 'No health check is registered for key [nothing-registered]');
+
+it('runs the configured instance for a class-string and never replaces it', function () {
+    Illuminate\Support\Facades\Http::fake();
+    Notification::fake();
+    $team = Team::create();
+
+    Health::check(RoundlyConsulting\Alerts\Checks\HttpPingCheck::make('https://api.example.com'));
+    $registered = Health::find('http_ping_check');
+
+    $result = Health::for($team)->run(RoundlyConsulting\Alerts\Checks\HttpPingCheck::class);
+
+    expect($result->meta['url'])->toBe('https://api.example.com')
+        ->and(Health::find('http_ping_check'))->toBe($registered);
+});
+
+it('runs a passed instance without replacing the registered one', function () {
+    Illuminate\Support\Facades\Http::fake();
+    Notification::fake();
+    $team = Team::create();
+
+    Health::check(RoundlyConsulting\Alerts\Checks\HttpPingCheck::make('https://api.example.com'));
+    $registered = Health::find('http_ping_check');
+
+    $adHoc = Health::for($team)->run(RoundlyConsulting\Alerts\Checks\HttpPingCheck::make('https://other.example.com'));
+    $scheduled = Health::for($team)->run($team->healthChecks()->sole());
+
+    expect($adHoc->meta['url'])->toBe('https://other.example.com')
+        ->and(Health::find('http_ping_check'))->toBe($registered)
+        // a later run of the row (as a queue worker would) probes the configured target
+        ->and($scheduled->meta['url'])->toBe('https://api.example.com');
+});
+
+it('refuses a class-string registered several times under different keys', function () {
+    Health::check(RoundlyConsulting\Alerts\Checks\HttpPingCheck::make('https://a.example.com')->as('a_ping'));
+    Health::check(RoundlyConsulting\Alerts\Checks\HttpPingCheck::make('https://b.example.com')->as('b_ping'));
+
+    Health::for(Team::create())->run(RoundlyConsulting\Alerts\Checks\HttpPingCheck::class);
+})->throws(InvalidHealthCheck::class, 'run it by key: a_ping, b_ping');
+
+it('runs the single custom-keyed registration of a class-string', function () {
+    Illuminate\Support\Facades\Http::fake();
+    Notification::fake();
+
+    Health::check(RoundlyConsulting\Alerts\Checks\HttpPingCheck::make('https://a.example.com')->as('a_ping'));
+
+    $team = Team::create();
+    $result = Health::for($team)->run(RoundlyConsulting\Alerts\Checks\HttpPingCheck::class);
+
+    expect($result->meta['url'])->toBe('https://a.example.com')
+        ->and($team->healthChecks()->sole()->health_check)->toBe('a_ping');
+});
