@@ -15,6 +15,11 @@ abstract class Check
 {
     protected Limit $notificationThrottle;
 
+    /**
+     * A key set with {@see self::as()}, overriding the one derived from the class name.
+     */
+    protected ?string $customKey = null;
+
     public function __construct(
         public ?HealthCheck $healthCheck = null,
     ) {
@@ -44,16 +49,28 @@ abstract class Check
             : Limit::perMinute(1);
     }
 
+    /**
+     * Register this instance under its own key, so one check class can be registered
+     * several times with different settings (`DatabaseCheck::make('mysql')->as('mysql')`).
+     * The name follows the key. A subclass that overrides key() keeps control of it.
+     */
+    public function as(string $key): static
+    {
+        $this->customKey = $key;
+
+        return $this;
+    }
+
     public function name(): string
     {
         return Str::headline(
-            class_basename($this)
+            $this->customKey ?? class_basename($this)
         );
     }
 
     public function key(): string
     {
-        return Str::snake(
+        return $this->customKey ?? Str::snake(
             class_basename($this)
         );
     }

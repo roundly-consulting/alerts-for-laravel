@@ -57,11 +57,6 @@ final class HttpPingCheck extends Check
         return $this;
     }
 
-    public function key(): string
-    {
-        return 'http_ping_check';
-    }
-
     public function check(): CheckResult
     {
         $start = microtime(true);
