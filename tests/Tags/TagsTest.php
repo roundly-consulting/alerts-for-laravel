@@ -47,3 +47,32 @@ it('merges check tags with row tags as effective tags', function () {
 
     expect($healthCheck->effectiveTags())->toContain('row-tag');
 });
+
+it('filters report, status, alerts:status and /health by the check\'s own tags', function () {
+    Illuminate\Support\Facades\Notification::fake();
+
+    Health::define('db-down', fn () => RoundlyConsulting\Alerts\CheckResult::failed('Database down'))
+        ->tags(['critical']);
+    Health::check(ExampleHealthCheck::class);
+
+    $team = Team::create();
+    // Neither schedule carries row tags: 'critical' lives on the check alone.
+    Health::for($team)->run(Health::for($team)->monitor('db-down')->save());
+    Health::for($team)->monitor(ExampleHealthCheck::class)->save();
+
+    expect(Health::report(['critical'])->checks())->toHaveCount(1)
+        ->and(Health::report(['critical'])->checks()[0]->key)->toBe('db-down')
+        ->and(Health::status(['critical']))->toBe(Status::Failed)
+        ->and(Health::for($team)->status(['critical']))->toBe(Status::Failed)
+        ->and(Health::report(['nope'])->checks())->toBe([]);
+
+    $this->artisan('alerts:status', ['--tag' => 'critical'])
+        ->expectsOutputToContain('db-down')
+        ->assertExitCode(1);
+
+    Health::routes();
+
+    $this->getJson('/health?tag=critical')
+        ->assertStatus(503)
+        ->assertJsonPath('checks.0.key', 'db-down');
+});

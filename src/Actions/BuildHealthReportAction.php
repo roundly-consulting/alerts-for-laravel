@@ -7,6 +7,7 @@ namespace RoundlyConsulting\Alerts\Actions;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use RoundlyConsulting\Alerts\Alert;
+use RoundlyConsulting\Alerts\Check;
 use RoundlyConsulting\Alerts\Enums\Status;
 use RoundlyConsulting\Alerts\HealthCheck;
 use RoundlyConsulting\Alerts\HealthManager;
@@ -70,9 +71,21 @@ final readonly class BuildHealthReportAction
         }
 
         if ($tags !== null && $tags !== []) {
-            $query->where(function (Builder $q) use ($tags): void {
+            // A row matches on its own tags OR its check's tags() — the same effective
+            // tags muting and `whereTag()` use. A check-level tag is never stored on the
+            // row, so it is matched through the keys of the registered checks carrying it.
+            $taggedKeys = $this->health->all()
+                ->filter(fn (Check $check): bool => array_intersect($tags, $check->tags()) !== [])
+                ->keys()
+                ->all();
+
+            $query->where(function (Builder $q) use ($tags, $taggedKeys): void {
                 foreach ($tags as $tag) {
                     $q->orWhereJsonContains('tags', $tag);
+                }
+
+                if ($taggedKeys !== []) {
+                    $q->orWhereIn('health_check', $taggedKeys);
                 }
             });
         }
