@@ -48,3 +48,23 @@ Initial public release.
 - `PendingScheduledCheck` is built by `Health::for($owner)->monitor()`; its constructor is
   internal. `resolveCheck()` and `register()` on the manager are internal.
 - `alerts:perform-health-checks` prints how many checks it queued.
+- `Health::for($owner)->run()` never schedules anything: without a scheduled row it keeps an
+  on-demand row (`frequency` null) the scheduler never queues and `monitors()` does not list. It
+  accepts a registered key (the only name of an inline check), runs the registered instance for a
+  class-string and never replaces a registered check.
+- `Check::as($key)` registers one check class several times under distinct keys.
+- Cron expressions accept day and month names and are validated on save; a stored row the
+  scheduler cannot evaluate is skipped and reported instead of stopping `runDue()`.
+- An inline check's `define()` throttle and options apply to its run-now row and seed
+  `monitor($key)`.
+- Tag filters (`report()`, `status()`, `alerts:status --tag`, `/health?tag=`) match a check's own
+  `tags()`; `alerts:list` shows tag and global silences as muted.
+- An open alert follows the latest failing result (status, message, muted flag); a scheduled
+  check has at most one open alert even when runs overlap, and a recovery is announced once.
+- Run and alert messages are `text` columns, stored up to 1000 characters.
+- The default notification includes the failure reason.
+- A per-check timeout keeps a queue worker's own job-timeout alarm.
+- `Health::fake()` applies the pipeline's gates: exceptions become failed results, `failAfter` /
+  `recoverAfter` apply, and a healthy run with nothing open records no recovery.
+- `alerts:prune-runs` is scheduled whenever history is enabled, also with `schedule.enabled` off;
+  the switches accept `1`/`true`/`on`/`yes`.
