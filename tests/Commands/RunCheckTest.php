@@ -87,3 +87,13 @@ it('errors when the notifiable class is not an eloquent model', function () {
         '--notifiable' => 'NotAModel:1',
     ])->assertExitCode(1);
 });
+
+it('prints a throwing check as a failed result on a probe run', function () {
+    Health::define('flaky', function (): never {
+        throw new RuntimeException('upstream exploded');
+    });
+
+    $this->artisan('alerts:check', ['key' => 'flaky'])
+        ->expectsOutputToContain('upstream exploded')
+        ->assertExitCode(1);
+});

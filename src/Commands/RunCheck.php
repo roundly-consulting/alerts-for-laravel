@@ -8,6 +8,7 @@ use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Model;
 use RoundlyConsulting\Alerts\CheckResult;
 use RoundlyConsulting\Alerts\Facades\Health;
+use RoundlyConsulting\Alerts\Support\SafeCheck;
 
 final class RunCheck extends Command
 {
@@ -37,9 +38,11 @@ final class RunCheck extends Command
             return self::FAILURE;
         }
 
+        // A probe runs with no side effects, but under the same exception guard as a
+        // real run: a throwing check prints as a failed result, never a stack trace.
         $result = $notifiable instanceof Model
             ? Health::for($notifiable)->run($check)
-            : $check->check();
+            : SafeCheck::run($check, null, $check->key());
 
         $this->render($result);
 
