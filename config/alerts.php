@@ -115,9 +115,9 @@ return [
     |--------------------------------------------------------------------------
     |
     | When enabled, alert notifications can be suppressed during deploys or
-    | maintenance via Health::mute(). Runs are still recorded while muted. Set
-    | the master switch to false to ignore every silence. `silence-model` is the
-    | Eloquent model used to persist mute records.
+    | maintenance via Health::silences()->mute(). Runs are still recorded while
+    | muted. Set the master switch to false to ignore every silence.
+    | `silence-model` is the Eloquent model used to persist mute records.
     |
     */
 

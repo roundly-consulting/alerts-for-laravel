@@ -11,7 +11,8 @@ Initial public release.
 ### Added
 
 - Recurring health checks for any notifiable model: write a `Check` class or define one inline
-  with `Health::define()`, then schedule it per owner on a cron frequency with `monitorCheck()`.
+  with `Health::define()`, then schedule it per owner on a cron frequency with
+  `Health::for($owner)->monitor()` (or the `monitorCheck()` trait shortcut).
 - Built-in `DatabaseCheck`, `CacheCheck`, `QueueCheck`, `StorageCheck` and `HttpPingCheck`, each
   with a default notification.
 - `CheckResult` severities (`ok`, `warning`, `failed`, `skipped`) and alerts that record when a
@@ -19,10 +20,31 @@ Initial public release.
 - Throttled alert notifications, flap detection (`failAfter()` / `recoverAfter()`) and per-check
   timeouts; a check that throws is recorded as failed instead of crashing the run.
 - Escalation policies by level, per-check and per-level notification channels, and tags.
-- Maintenance windows: mute a check until a given time with `Health::mute()`.
+- Maintenance windows: `Health::silences()->mute()` / `unmute()` / `isMuted()` / `active()`.
 - Run history with `uptimePercentage()` and `p95LatencyMs()`, a status report
-  (`Health::report()`) and an opt-in JSON status endpoint (`Health::routes()`).
+  (`Health::report()`, `Health::for($owner)->report()`) and an opt-in JSON status endpoint
+  (`Health::routes()`).
+- One public API in three layers: the `Health` facade, the injectable `HealthManager` behind it,
+  and an action per use case. `Health::for($owner)` scopes `run()` / `report()` / `status()` /
+  `monitor()` / `schedule()` / `unmonitor()` / `monitors()` to one owner and refuses another
+  owner's rows; `Health::runDue()` and `Health::prune()` expose what the scheduler commands do.
 - Artisan commands `alerts:perform-health-checks`, `alerts:check`, `alerts:list`,
   `alerts:status` and `alerts:prune-runs`.
 - `HealthCheckFailed`, `HealthCheckRecovered` and `HealthCheckEscalated` events.
-- `Health::fake()` with `assertChecked()`, `assertAlerted()` and related assertions.
+- `Health::fake()`: a `HealthManager` subtype that also takes over dependency injection, keeps
+  the registered checks, answers reports and silences from memory, and records every call —
+  including through the `UsesHealthChecks` trait — with `assertChecked/Alerted/Recovered/`
+  `Monitored/Unmonitored/Muted/Unmuted/RanDue/Pruned()` and an `assertNothing*()` for each.
+
+### Changed
+
+- The facade root is now `RoundlyConsulting\Alerts\HealthManager` (was `…\Alerts\Health`), bound
+  by class name only — the `'health'` container key is gone.
+- `Health::run($check, $owner)` → `Health::for($owner)->run($check)`;
+  `Health::report($owner, $tags)` → `Health::for($owner)->report($tags)`; `Health::report()` and
+  `Health::status()` now take only `?array $tags`.
+- `Health::mute/unmute/isMuted()` → `Health::silences()->mute/unmute/isMuted()`; the
+  `notifiable:` argument is now `for:`, and `unmute()` returns the number of silences lifted.
+- `PendingScheduledCheck` is built by `Health::for($owner)->monitor()`; its constructor is
+  internal. `resolveCheck()` and `register()` on the manager are internal.
+- `alerts:perform-health-checks` prints how many checks it queued.

@@ -149,8 +149,8 @@ Health::checks([
     MemoryUsageCheck::class,
 ]);
 
-// The Health manager is also resolvable from the container:
-app(\RoundlyConsulting\Alerts\Health::class)->checks([DiskUsageCheck::class]);
+// The HealthManager behind the facade is also injectable (see "Without the facade"):
+app(\RoundlyConsulting\Alerts\HealthManager::class)->checks([DiskUsageCheck::class]);
 ```
 
 #### Built-in checks
@@ -280,21 +280,28 @@ class Team extends Model implements HasNotifiablesForAlerts
 }
 ```
 
-The trait adds `healthChecks()` and `alerts()` relationships plus `createHealthCheck()`,
-`monitor()`, and the fluent `monitorCheck()` helper.
+The trait adds `healthChecks()` and `alerts()` relationships plus the `monitorCheck()`,
+`monitor()` and `createHealthCheck()` shortcuts. They delegate to `Health::for($this)`, so
+they behave exactly like the facade calls below — and `Health::fake()` records them too.
 
 ### 5. Schedule a check for an owner
 
-Use the fluent builder with preset frequencies and a check class (no magic strings):
+`Health::for($owner)` scopes every health operation to one owner. Use the fluent builder with
+preset frequencies and a check class (no magic strings):
 
 ```php
+use RoundlyConsulting\Alerts\Facades\Health;
+
 $team = Team::first();
 
-$team->monitorCheck(DiskUsageCheck::class)
+Health::for($team)->monitor(DiskUsageCheck::class)
     ->everyFiveMinutes()
     ->throttle(maxAttempts: 2, decayMinutes: 60)
     ->meta(['server_id' => '2d4fcdff-9787-49b1-8b73-3d411f80ae1b'])
     ->save();
+
+// The same builder through the model trait:
+$team->monitorCheck(DiskUsageCheck::class)->everyFiveMinutes()->save();
 ```
 
 Available presets: `everyMinute()`, `everyFiveMinutes()`, `everyTenMinutes()`,
@@ -305,7 +312,7 @@ The same builder accepts a full set of declarative options — flap debounce, re
 confirmation, per-check timeout, tags, channel routing, and an escalation policy:
 
 ```php
-$team->monitorCheck(DiskUsageCheck::class)
+Health::for($team)->monitor(DiskUsageCheck::class)
     ->everyFiveMinutes()
     ->failAfter(3)                       // open only after 3 consecutive failures
     ->recoverAfter(2)                    // close only after 2 consecutive OKs
@@ -320,18 +327,27 @@ $team->monitorCheck(DiskUsageCheck::class)
 
 The same options are available on the inline closure builder (`Health::define(...)`).
 
-A DTO and the original positional helper remain available:
+Schedule from a DTO, list an owner's schedules, or stop monitoring:
 
 ```php
 use RoundlyConsulting\Alerts\DataTransferObjects\ScheduleHealthCheckData;
 
-$team->monitor(new ScheduleHealthCheckData(
+Health::for($team)->schedule(new ScheduleHealthCheckData(
     check: DiskUsageCheck::class, frequency: 'hourly', maxAttempts: 2, decayMinutes: 60,
 ));
 
-// Still supported:
+Health::for($team)->monitors();                        // Collection<HealthCheck>, oldest first
+Health::for($team)->unmonitor(DiskUsageCheck::class);  // soft-deletes the team's schedules; returns the count
+Health::for($team)->unmonitor($healthCheck);           // one row — refused if it belongs to another owner
+
+// Trait shortcuts for the same calls:
+$team->monitor(new ScheduleHealthCheckData(check: DiskUsageCheck::class, frequency: 'hourly'));
 $team->createHealthCheck('disk_usage_check', '*/5 * * * *', maxAttempts: 2, decayMinutes: 60, tags: ['db']);
 ```
+
+`unmonitor()` accepts a check class-string, a registered key, a `Check` instance or a
+`HealthCheck` row. A row scheduled against a different owner throws `InvalidHealthCheck` —
+the handle is a security boundary.
 
 ### 6. Run due checks
 
@@ -348,7 +364,12 @@ Schedule::command('alerts:perform-health-checks')->everyMinute();
 php artisan alerts:perform-health-checks
 ```
 
-The command dispatches `HealthCheckJob` for every health check whose cron frequency is due.
+The command calls `Health::runDue()`, which dispatches `HealthCheckJob` for every health check
+whose cron frequency is due and returns how many it queued. Call it yourself from anywhere:
+
+```php
+$queued = Health::runDue(); // int
+```
 
 ### 7. Run a check now
 
@@ -358,24 +379,29 @@ effects as the queued job and returns the `CheckResult`:
 ```php
 use RoundlyConsulting\Alerts\Facades\Health;
 
-$result = Health::run(DiskUsageCheck::class, $team);
+$result = Health::for($team)->run(DiskUsageCheck::class);
 $result->status; // Status::Ok | Warning | Failed | Skipped
+
+// Run one of the team's scheduled rows as-is (another owner's row is refused):
+Health::for($team)->run($team->healthChecks()->first());
 ```
 
 ### 8. Read current status
 
 ```php
-$report = Health::report();          // HealthReport (optionally scoped: Health::report($team))
-$report->overall();                  // worst Status across all checks
-$report->isHealthy();                // bool
+$report = Health::report();                  // HealthReport across every scheduled check
+$report->overall();                          // worst Status across all checks
+$report->isHealthy();                        // bool
 
 foreach ($report->checks() as $check) {
     // CheckStatus: key, name, status, lastAlertAt, message, tags, uptime, p95LatencyMs, muted
 }
 
-Health::status();                    // Status roll-up
-Health::report($team, ['critical']); // scope the report to one or more tags
-$report->whereTag('db');             // filter an in-memory report
+Health::status();                            // Status roll-up
+Health::report(['critical']);                // only checks carrying one of these tags
+Health::for($team)->report(['critical']);    // one owner, optionally tag-filtered
+Health::for($team)->status();                // that owner's roll-up
+$report->whereTag('db');                     // filter an in-memory report
 ```
 
 A CLI summary (non-zero exit when anything is alertable — handy in CI / uptime probes):
@@ -460,14 +486,21 @@ notifications keep full control of their own `via()`.
 Suppress alert notifications during deploys or maintenance while still recording runs:
 
 ```php
-Health::mute('disk_usage_check', until: now()->addMinutes(30), reason: 'db migration');
-Health::isMuted('disk_usage_check');   // true
-Health::unmute('disk_usage_check');
+Health::silences()->mute('disk_usage_check', until: now()->addMinutes(30), reason: 'db migration');
+Health::silences()->isMuted('disk_usage_check');   // true
+Health::silences()->unmute('disk_usage_check');    // int: silences lifted
 
-Health::mute('critical');              // mute a whole tag
-Health::mute('*');                     // mute everything
-Health::mute('disk_usage_check', notifiable: $team); // scope the mute to one owner
+Health::silences()->mute('critical');              // mute a whole tag
+Health::silences()->mute('*');                     // mute everything
+Health::silences()->mute('disk_usage_check', for: $team); // scope the mute to one owner
+Health::silences()->unmute('disk_usage_check', for: $team); // lift only that owner's silence
+
+Health::silences()->active();                      // Collection<AlertSilence> in force now
+Health::silences()->active($team);                 // global silences + those scoped to $team
 ```
+
+`isMuted()` matches the exact key it is given; the run pipeline also honours tag and `'*'`
+silences.
 
 While muted, runs and counters are still maintained but `HealthCheckFailed` /
 `HealthCheckRecovered` and notifications are suppressed, and touched alerts are flagged
@@ -487,10 +520,16 @@ $check->uptimePercentage(now()->subDay()); // % of non-alertable runs in the win
 $check->p95LatencyMs(now()->subDay());     // 95th-percentile duration in ms
 ```
 
-Retention is pruned by `alerts:prune-runs` (auto-scheduled daily when history is enabled):
+Retention is pruned by `alerts:prune-runs` (auto-scheduled daily when history is enabled), or
+from code with `Health::prune()`:
 
 ```bash
 php artisan alerts:prune-runs --days=30
+```
+
+```php
+Health::prune();    // older than alerts.history.retention_days; returns the number deleted
+Health::prune(7);   // older than 7 days
 ```
 
 ### 14. Per-check timeout
@@ -528,19 +567,78 @@ php artisan alerts:prune-runs --days=30                    # prune run history (
 `alerts:check` exits `0` for ok/skipped and `1` for an alertable result. Without `--notifiable`
 it runs a pure probe (no side effects); with it, the full alert/notify/history path runs.
 
-### Testing
+### Without the facade
 
-Swap the manager for a fake to assert monitoring without dispatching jobs or notifications:
+Everything above runs the same code through the injectable `HealthManager` — the facade's root
+— or through the action classes directly:
 
 ```php
-Health::fake();
+use RoundlyConsulting\Alerts\Actions\MuteAlertsAction;
+use RoundlyConsulting\Alerts\Actions\ScheduleHealthCheckAction;
+use RoundlyConsulting\Alerts\HealthManager;
 
-Health::run(DiskUsageCheck::class, $team);
+final class MaintenanceController
+{
+    public function __construct(private HealthManager $health) {}
 
-Health::assertChecked('disk_usage_check');
-Health::assertAlerted('disk_usage_check');
-Health::assertNothingRecovered();
+    public function __invoke(Team $team): void
+    {
+        $this->health->silences()->mute('*', until: now()->addHour(), for: $team);
+        $this->health->for($team)->run(DiskUsageCheck::class);
+    }
+}
+
+// The raw use cases:
+app(ScheduleHealthCheckAction::class)->execute($team, new ScheduleHealthCheckData(check: DiskUsageCheck::class));
+app(MuteAlertsAction::class)->execute('disk_usage_check', until: now()->addHour());
 ```
+
+| Facade | Action |
+|---|---|
+| `Health::for($o)->run($check)` | `RunHealthCheckNowAction` |
+| `Health::report()` / `Health::for($o)->report()` | `BuildHealthReportAction` |
+| `Health::for($o)->monitor(...)->save()` / `->schedule($data)` | `ScheduleHealthCheckAction` |
+| `Health::for($o)->unmonitor($check)` | `UnscheduleHealthCheckAction` |
+| `Health::silences()->mute(...)` | `MuteAlertsAction` |
+| `Health::silences()->unmute(...)` | `UnmuteAlertsAction` |
+| `Health::runDue()` | `RunDueHealthChecksAction` |
+| `Health::prune($days)` | `PruneHealthCheckRunsAction` |
+
+### Testing
+
+`Health::fake()` swaps the manager — for the facade *and* for anything that injects
+`HealthManager` — with a recording fake. It keeps the checks you registered, runs checks
+without dispatching jobs, sending notifications or writing rows, answers `report()`/`status()`
+and silences from memory, and records every call, including those made through the
+`UsesHealthChecks` trait and the artisan commands:
+
+```php
+$fake = Health::fake();
+
+Health::for($team)->run(DiskUsageCheck::class);
+$team->monitorCheck(DiskUsageCheck::class)->hourly()->save();
+Health::silences()->mute('db', for: $team);
+$this->artisan('alerts:prune-runs', ['--days' => 7]);
+
+$fake->assertChecked('disk_usage_check');
+$fake->assertAlerted('disk_usage_check');          // not recorded while a fake silence matches
+$fake->assertMonitored(DiskUsageCheck::class, $team);
+$fake->assertMuted('db', $team);
+$fake->assertPruned(7);
+$fake->assertNothingRanDue();
+```
+
+| Assertion | Negative |
+|---|---|
+| `assertChecked($key)` | `assertNothingChecked()` |
+| `assertAlerted($key)` | `assertNothingAlerted()` |
+| `assertRecovered($key)` | `assertNothingRecovered()` |
+| `assertMonitored($checkOrKey, ?$owner)` | `assertNothingMonitored()` |
+| `assertUnmonitored($checkOrKey, ?$owner)` | `assertNothingUnmonitored()` |
+| `assertMuted($key, ?$owner)` | `assertNothingMuted()` |
+| `assertUnmuted($key, ?$owner)` | `assertNothingUnmuted()` |
+| `assertRanDue(?$times)` | `assertNothingRanDue()` |
+| `assertPruned(?$days)` | `assertNothingPruned()` |
 
 ### Events
 
