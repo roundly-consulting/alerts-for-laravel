@@ -47,6 +47,12 @@ final class Timeout
     }
 
     /**
+     * SIGALRM is process-wide, and a queue worker already uses it: it arms an alarm for
+     * the job's own `--timeout`. So the pending alarm is taken over, not clobbered —
+     * when it would fire first, it stays in charge (with its own handler) and the check
+     * cannot extend it; otherwise the check's budget runs and the worker's alarm is
+     * re-armed afterwards with whatever time it had left.
+     *
      * @template TReturn
      *
      * @param  Closure(): TReturn  $callback
@@ -58,7 +64,16 @@ final class Timeout
     {
         pcntl_async_signals(true);
 
+        $pending = pcntl_alarm(0);
+
+        if ($pending > 0 && $pending <= $seconds) {
+            pcntl_alarm($pending);
+
+            return $callback();
+        }
+
         $previous = pcntl_signal_get_handler(SIGALRM);
+        $start = (int) hrtime(true);
 
         pcntl_signal(SIGALRM, function () use ($key, $seconds): void {
             throw CheckTimedOut::after($key, $seconds);
@@ -71,6 +86,12 @@ final class Timeout
         } finally {
             pcntl_alarm(0);
             pcntl_signal(SIGALRM, $previous);
+
+            if ($pending > 0) {
+                $elapsed = (int) ceil(((int) hrtime(true) - $start) / 1_000_000_000);
+
+                pcntl_alarm(max(1, $pending - $elapsed));
+            }
         }
     }
 
