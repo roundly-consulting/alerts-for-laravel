@@ -32,6 +32,7 @@ use RoundlyConsulting\Alerts\Support\HealthCheckModel;
 use RoundlyConsulting\Alerts\Support\NotifiableHealth;
 use RoundlyConsulting\Alerts\Support\PendingCheck;
 use RoundlyConsulting\Alerts\Support\Silences;
+use RoundlyConsulting\PackageToolkit\Support\Config;
 
 /**
  * The root of the `Health` facade: the check registry, the model-scoped handle
@@ -308,7 +309,7 @@ class HealthManager
      */
     public function mutedFor(string $key, ?Model $notifiable = null): bool
     {
-        if (config('alerts.silence', true) !== true) {
+        if (! Config::boolean('alerts.silence', true)) {
             return false;
         }
 

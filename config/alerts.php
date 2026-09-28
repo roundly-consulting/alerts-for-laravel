@@ -84,7 +84,8 @@ return [
     |
     | When enabled, the package auto-registers the `alerts:perform-health-checks`
     | command on Laravel's scheduler at the given frequency, so install-to-working
-    | is a single config line. Disable it to wire the command yourself.
+    | is a single config line. Disable it to wire the command yourself; the daily
+    | `alerts:prune-runs` stays scheduled while run history is enabled.
     |
     */
 
@@ -132,8 +133,9 @@ return [
     |
     | Every executed check records an immutable run (status + latency) used for
     | uptime % and p95 latency queries. `retention_days` bounds how long runs are
-    | kept; the `alerts:prune-runs` command (auto-scheduled daily when enabled)
-    | deletes anything older. `model` is the Eloquent model used for runs.
+    | kept; the `alerts:prune-runs` command (auto-scheduled daily whenever history
+    | is enabled, whatever `schedule.enabled` says) deletes anything older. `model`
+    | is the Eloquent model used for runs.
     |
     */
 

@@ -40,32 +40,42 @@ it('falls back to the configured retention when no days option is given', functi
     expect(HealthCheckRun::count())->toBe(0);
 });
 
-it('registers a daily prune on the scheduler when history is enabled', function () {
-    $schedule = new Illuminate\Console\Scheduling\Schedule;
+function bootedScheduleCommands(): string
+{
+    app()->forgetInstance(Illuminate\Console\Scheduling\Schedule::class);
+    app()->singleton(Illuminate\Console\Scheduling\Schedule::class, fn () => new Illuminate\Console\Scheduling\Schedule);
 
-    (new RoundlyConsulting\Alerts\AlertsServiceProvider(app()))
-        ->scheduleCommand($schedule);
+    $provider = new RoundlyConsulting\Alerts\AlertsServiceProvider(app());
+    $provider->register();
+    $provider->boot();
 
-    $commands = collect($schedule->events())
+    return collect(app(Illuminate\Console\Scheduling\Schedule::class)->events())
         ->map(fn ($event) => $event->command)
         ->filter()
         ->implode(' ');
+}
 
-    expect($commands)->toContain('alerts:prune-runs');
+it('registers a daily prune on the scheduler when history is enabled', function () {
+    $schedule = new Illuminate\Console\Scheduling\Schedule;
+
+    (new RoundlyConsulting\Alerts\AlertsServiceProvider(app()))->schedulePrune($schedule);
+
+    expect($schedule->events()[0]->command)->toContain('alerts:prune-runs')
+        ->and($schedule->events()[0]->expression)->toBe('0 0 * * *')
+        ->and(bootedScheduleCommands())->toContain('alerts:prune-runs');
 });
 
 it('skips the prune schedule when history is disabled', function () {
     config()->set('alerts.history.enabled', false);
 
-    $schedule = new Illuminate\Console\Scheduling\Schedule;
+    expect(bootedScheduleCommands())->not->toContain('alerts:prune-runs')
+        ->toContain('alerts:perform-health-checks');
+});
 
-    (new RoundlyConsulting\Alerts\AlertsServiceProvider(app()))
-        ->scheduleCommand($schedule);
+it('schedules pruning even when the perform command is wired by hand', function () {
+    config()->set('alerts.schedule.enabled', false);
+    config()->set('alerts.history.enabled', true);
 
-    $commands = collect($schedule->events())
-        ->map(fn ($event) => $event->command)
-        ->filter()
-        ->implode(' ');
-
-    expect($commands)->not->toContain('alerts:prune-runs');
+    expect(bootedScheduleCommands())->toContain('alerts:prune-runs')
+        ->not->toContain('alerts:perform-health-checks');
 });

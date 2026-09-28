@@ -17,6 +17,7 @@ use RoundlyConsulting\Alerts\Support\HealthCheckRunModel;
 use RoundlyConsulting\PackageToolkit\Concerns\RegistersBlueprintMacros;
 use RoundlyConsulting\PackageToolkit\Package;
 use RoundlyConsulting\PackageToolkit\PackageServiceProvider;
+use RoundlyConsulting\PackageToolkit\Support\Config;
 
 final class AlertsServiceProvider extends PackageServiceProvider
 {
@@ -69,10 +70,16 @@ final class AlertsServiceProvider extends PackageServiceProvider
         } else {
             $event->everyMinute();
         }
+    }
 
-        if (config('alerts.history.enabled', true) === true) {
-            $schedule->command('alerts:prune-runs')->daily();
-        }
+    /**
+     * Pruning follows `history.enabled` alone. `schedule.enabled = false` is how a host
+     * takes the perform command over; it must not silently stop the run history from
+     * being pruned too.
+     */
+    public function schedulePrune(Schedule $schedule): void
+    {
+        $schedule->command('alerts:prune-runs')->daily();
     }
 
     /**
@@ -94,7 +101,7 @@ final class AlertsServiceProvider extends PackageServiceProvider
             'Registered checks' => $this->registeredChecks(),
             'Scheduling' => $this->scheduling(),
             'History' => $this->history(),
-            'Silences' => config('alerts.silence', true) === true ? 'ON' : 'OFF',
+            'Silences' => Config::boolean('alerts.silence', true) ? 'ON' : 'OFF',
             'Default escalation' => $this->defaultEscalation(),
             'Health endpoint' => $this->healthEndpoint(),
         ];
@@ -120,7 +127,7 @@ final class AlertsServiceProvider extends PackageServiceProvider
 
     private function scheduling(): string
     {
-        if (config('alerts.schedule.enabled', true) !== true) {
+        if (! Config::boolean('alerts.schedule.enabled', true)) {
             return 'OFF';
         }
 
@@ -129,7 +136,7 @@ final class AlertsServiceProvider extends PackageServiceProvider
 
     private function history(): string
     {
-        if (config('alerts.history.enabled', true) !== true) {
+        if (! Config::boolean('alerts.history.enabled', true)) {
             return 'OFF';
         }
 
@@ -147,11 +154,15 @@ final class AlertsServiceProvider extends PackageServiceProvider
 
     private function registerCommandSchedule(): void
     {
-        if (config('alerts.schedule.enabled', true) !== true) {
-            return;
-        }
+        $this->callAfterResolving(Schedule::class, function (Schedule $schedule): void {
+            if (Config::boolean('alerts.schedule.enabled', true)) {
+                $this->scheduleCommand($schedule);
+            }
 
-        $this->callAfterResolving(Schedule::class, fn (Schedule $schedule) => $this->scheduleCommand($schedule));
+            if (Config::boolean('alerts.history.enabled', true)) {
+                $this->schedulePrune($schedule);
+            }
+        });
     }
 
     private function registerCheckList(): void

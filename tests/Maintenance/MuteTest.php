@@ -187,3 +187,25 @@ it('clears the muted flag once failures continue after the window', function () 
     expect(Health::report()->checks()[0]->muted)->toBeFalse()
         ->and(Alert::query()->sole()->meta)->not->toHaveKey(MonitorOptions::MUTED);
 });
+
+it('reads the switches from env-style strings', function (string $value, bool $on) {
+    config()->set('alerts.silence', $value);
+    config()->set('alerts.history.enabled', $value);
+
+    $team = Team::create();
+    $healthCheck = mutedHealthCheck($team);
+    Health::silences()->mute('example_health_check');
+
+    app(RunHealthCheckAction::class)->execute($healthCheck->fresh());
+
+    expect(Health::silences()->isMuted('example_health_check'))->toBe($on)
+        ->and($healthCheck->runs()->count())->toBe($on ? 1 : 0);
+})->with([
+    'one' => ['1', true],
+    'true' => ['true', true],
+    'on' => ['on', true],
+    'yes' => ['yes', true],
+    'zero' => ['0', false],
+    'false' => ['false', false],
+    'off' => ['off', false],
+]);

@@ -22,6 +22,7 @@ use RoundlyConsulting\Alerts\Support\AlertSilenceModel;
 use RoundlyConsulting\Alerts\Support\HealthCheckModel;
 use RoundlyConsulting\Alerts\Support\MonitorOptions;
 use RoundlyConsulting\Alerts\Support\SafeCheck;
+use RoundlyConsulting\PackageToolkit\Support\Config;
 
 /**
  * Test double for the Health manager, installed by `Health::fake()`. It keeps the
@@ -407,7 +408,7 @@ final class HealthFake extends HealthManager
      */
     private function silenced(array $keys, ?Model $notifiable, ?string $scope = null): bool
     {
-        if (config('alerts.silence', true) !== true) {
+        if (! Config::boolean('alerts.silence', true)) {
             return false;
         }
 

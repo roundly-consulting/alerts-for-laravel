@@ -22,6 +22,7 @@ use RoundlyConsulting\Alerts\Support\AlertSilenceModel;
 use RoundlyConsulting\Alerts\Support\HealthCheckRunModel;
 use RoundlyConsulting\Alerts\Support\MonitorOptions;
 use RoundlyConsulting\Alerts\Support\SafeCheck;
+use RoundlyConsulting\PackageToolkit\Support\Config;
 
 /**
  * Runs a single scheduled health check and applies its side effects through one
@@ -87,7 +88,7 @@ final readonly class RunHealthCheckAction
 
     private function recordRun(HealthCheck $healthCheck, CheckResult $result, int $durationMs): void
     {
-        if (config('alerts.history.enabled', true) !== true) {
+        if (! Config::boolean('alerts.history.enabled', true)) {
             return;
         }
 
@@ -238,7 +239,7 @@ final readonly class RunHealthCheckAction
 
     private function isMuted(HealthCheck $healthCheck, Check $check): bool
     {
-        if (config('alerts.silence', true) !== true) {
+        if (! Config::boolean('alerts.silence', true)) {
             return false;
         }
 
