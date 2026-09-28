@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Alerts\Actions;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\UniqueConstraintViolationException;
 use RoundlyConsulting\Alerts\Alert;
 use RoundlyConsulting\Alerts\AlertSilence;
 use RoundlyConsulting\Alerts\Check;
@@ -136,15 +138,13 @@ final readonly class RunHealthCheckAction
         CheckResult $result,
         bool $muted,
     ): void {
-        $alert = $this->retrieveLatestAlert($healthCheck);
+        $alert = $this->retrieveOpenAlert($healthCheck);
 
-        if ($alert !== null && $alert->recovered_at === null) {
+        if ($alert !== null) {
             // An open alert describes the incident as it is NOW: a warning that turned
             // into a failure (or back) must not keep reporting the first result, and a
             // mute that ended must stop flagging it.
             $this->follow($alert, $result, $muted);
-        } else {
-            $alert = null;
         }
 
         // Flap gate: only open/notify once the failure has persisted long enough.
@@ -217,9 +217,9 @@ final readonly class RunHealthCheckAction
 
     private function handleRecovery(HealthCheck $healthCheck, MonitorOptions $options, bool $muted): void
     {
-        $alert = $this->retrieveLatestAlert($healthCheck);
+        $alert = $this->retrieveOpenAlert($healthCheck);
 
-        if ($alert === null || $alert->recovered_at !== null) {
+        if ($alert === null) {
             return;
         }
 
@@ -228,15 +228,24 @@ final readonly class RunHealthCheckAction
             return;
         }
 
-        $alert->update([
+        // A conditional close, not a write to the alert this run read: two overlapping
+        // healthy runs both see it open, and only the one whose UPDATE still finds an
+        // open row announces the recovery. It closes every open alert of the monitor,
+        // so an orphan left by an older bug or a manual insert cannot keep it red.
+        $closed = $this->openAlerts($healthCheck)->update([
             'recovered_at' => now(),
             'escalation_level' => 0,
+            'open_slot' => null,
         ]);
+
+        if ($closed === 0) {
+            return;
+        }
 
         $healthCheck->forceFill(['consecutive_successes' => 0])->save();
 
         if (! $muted) {
-            HealthCheckRecovered::dispatch($alert);
+            HealthCheckRecovered::dispatch($alert->refresh());
         }
     }
 
@@ -282,11 +291,17 @@ final readonly class RunHealthCheckAction
         return $meta;
     }
 
+    /**
+     * Open the monitor's alert. The unique (health_check_id, open_slot) index is what
+     * makes this safe when two failing runs overlap: the run whose insert loses adopts
+     * the alert the other one opened. A slot still held by an alert that left the
+     * pipeline's hands — soft-deleted, or resolved by hand — is released and retried.
+     */
     private function createAlert(HealthCheck $healthCheck, CheckResult $result, bool $muted): Alert
     {
         $notifiable = $this->notifiable($healthCheck);
 
-        return AlertModel::class()::create([
+        $attributes = [
             'notifiable_type' => $notifiable->getMorphClass(),
             'notifiable_id' => $notifiable->getKey(),
             'health_check_id' => $healthCheck->getKey(),
@@ -295,10 +310,58 @@ final readonly class RunHealthCheckAction
             'triggered_at' => now(),
             'message' => $result->storedMessage(),
             'meta' => $this->alertMeta($result, $muted),
-        ]);
+            'open_slot' => Alert::OPEN_SLOT,
+        ];
+
+        try {
+            return $this->insertAlert($attributes);
+        } catch (UniqueConstraintViolationException) {
+            // Another run of this monitor opened it after this run looked.
+        }
+
+        $holder = $this->slotHolder($healthCheck)->first();
+
+        if ($holder !== null && ! $holder->trashed() && $holder->recovered_at === null) {
+            $this->follow($holder, $result, $muted);
+
+            return $holder;
+        }
+
+        $this->slotHolder($healthCheck)->update(['open_slot' => null]);
+
+        return $this->insertAlert($attributes);
     }
 
-    private function retrieveLatestAlert(HealthCheck $healthCheck): ?Alert
+    /**
+     * In its own transaction (a savepoint when the caller already holds one), so a lost
+     * race on postgres rolls back this insert alone, not the caller's transaction.
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    private function insertAlert(array $attributes): Alert
+    {
+        $model = AlertModel::class();
+
+        return AlertModel::query()->getConnection()->transaction(
+            fn (): Alert => $model::create($attributes),
+        );
+    }
+
+    /**
+     * @return Builder<Alert>
+     */
+    private function slotHolder(HealthCheck $healthCheck): Builder
+    {
+        return AlertModel::query()
+            ->withTrashed()
+            ->where('health_check_id', $healthCheck->getKey())
+            ->where('open_slot', Alert::OPEN_SLOT);
+    }
+
+    /**
+     * @return Builder<Alert>
+     */
+    private function openAlerts(HealthCheck $healthCheck): Builder
     {
         $notifiable = $this->notifiable($healthCheck);
 
@@ -306,8 +369,17 @@ final readonly class RunHealthCheckAction
             ->where('notifiable_type', $notifiable->getMorphClass())
             ->where('notifiable_id', $notifiable->getKey())
             ->where('health_check_id', $healthCheck->getKey())
-            ->latest('triggered_at')
-            ->first();
+            ->whereNull('recovered_at');
+    }
+
+    /**
+     * The newest open alert. Ordered by id, not `triggered_at`: that column has
+     * one-second precision, and a fail/ok/fail inside one second used to pick an
+     * arbitrary alert among the ties — reopening beside one that never closed.
+     */
+    private function retrieveOpenAlert(HealthCheck $healthCheck): ?Alert
+    {
+        return $this->openAlerts($healthCheck)->latest('id')->first();
     }
 
     private function notifiable(HealthCheck $healthCheck): Model

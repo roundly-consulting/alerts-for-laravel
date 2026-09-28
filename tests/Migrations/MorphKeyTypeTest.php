@@ -85,7 +85,7 @@ it('emits the frozen bigint morph schema byte-for-byte', function (): void {
         .'"notifiable_type" varchar not null, "notifiable_id" integer not null, '
         .'"health_check_id" integer not null, "status" varchar not null default \'failed\', '
         .'"escalation_level" integer not null default \'0\', "message" text, "meta" text, '
-        .'"triggered_at" datetime not null, "recovered_at" datetime, '
+        .'"triggered_at" datetime not null, "recovered_at" datetime, "open_slot" integer, '
         .'"created_at" datetime, "updated_at" datetime, "deleted_at" datetime, '
         .'foreign key("health_check_id") references "health_checks"("id") on delete cascade)'
     );

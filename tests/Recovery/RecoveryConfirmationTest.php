@@ -89,3 +89,20 @@ it('recovers immediately with the default recover-after of one', function () {
     expect(RoundlyConsulting\Alerts\Alert::first()->recovered_at)->not->toBeNull();
     Event::assertDispatched(HealthCheckRecovered::class);
 });
+
+it('closes every alert when fail and ok flip within one second', function () {
+    Illuminate\Support\Carbon::setTestNow('2026-09-28 12:00:00');
+
+    $healthCheck = createHealthCheckWithNotifiable(Team::create());
+
+    foreach ([false, true, false, true, false, true] as $ok) {
+        ExampleHealthCheck::$ok = $ok;
+        app(RunHealthCheckAction::class)->execute($healthCheck->fresh());
+    }
+
+    expect(RoundlyConsulting\Alerts\Alert::query()->count())->toBe(3)
+        ->and(RoundlyConsulting\Alerts\Alert::query()->open()->count())->toBe(0)
+        ->and(RoundlyConsulting\Alerts\Facades\Health::status())->toBe(Status::Ok);
+
+    Illuminate\Support\Carbon::setTestNow();
+});

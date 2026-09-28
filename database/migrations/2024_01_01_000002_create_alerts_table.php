@@ -23,10 +23,16 @@ return new class extends Migration
             $table->jsonb('meta')->nullable();
             $table->timestamp('triggered_at');
             $table->timestamp('recovered_at')->nullable();
+            // 1 while this is the check's open alert, NULL once it recovers. NULLs never
+            // collide in a unique index, so the index below admits any number of closed
+            // alerts but only ONE open alert per scheduled check, on every engine — two
+            // overlapping failing runs cannot both open one.
+            $table->unsignedTinyInteger('open_slot')->nullable();
             $table->timestamps();
             $table->softDeletes();
 
             $table->index(['notifiable_type', 'notifiable_id', 'health_check_id'], 'alerts_notifiable_health_check_index');
+            $table->unique(['health_check_id', 'open_slot'], 'alerts_one_open_per_health_check');
         });
     }
 };

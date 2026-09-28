@@ -100,7 +100,7 @@ final readonly class BuildHealthReportAction
             ->where('notifiable_id', $healthCheck->notifiable_id)
             ->where('health_check_id', $healthCheck->getKey())
             ->open()
-            ->latest('triggered_at')
+            ->latest('id')
             ->first();
     }
 

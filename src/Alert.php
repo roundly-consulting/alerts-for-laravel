@@ -25,6 +25,7 @@ use RoundlyConsulting\Alerts\Support\HealthCheckModel;
  * @property array<string, mixed>|null $meta
  * @property \Carbon\CarbonInterface $triggered_at
  * @property \Carbon\CarbonInterface|null $recovered_at
+ * @property int|null $open_slot {@see self::OPEN_SLOT} while the pipeline holds this alert open
  * @property \Carbon\CarbonInterface|null $created_at
  * @property \Carbon\CarbonInterface|null $updated_at
  * @property \Carbon\CarbonInterface|null $deleted_at
@@ -39,6 +40,13 @@ class Alert extends Model
     use HasFactory;
 
     use SoftDeletes;
+
+    /**
+     * The `open_slot` value of the alert the pipeline holds open for a check. A unique
+     * (health_check_id, open_slot) index admits one such alert per check; recovery
+     * clears the slot.
+     */
+    public const int OPEN_SLOT = 1;
 
     protected $guarded = [];
 
@@ -89,6 +97,7 @@ class Alert extends Model
             'escalation_level' => 'int',
             'triggered_at' => 'datetime',
             'recovered_at' => 'datetime',
+            'open_slot' => 'int',
             'meta' => 'array',
         ];
     }
