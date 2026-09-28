@@ -8,8 +8,8 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use RoundlyConsulting\Alerts\Alert;
 use RoundlyConsulting\Alerts\Enums\Status;
-use RoundlyConsulting\Alerts\Facades\Health;
 use RoundlyConsulting\Alerts\HealthCheck;
+use RoundlyConsulting\Alerts\HealthManager;
 use RoundlyConsulting\Alerts\Status\CheckStatus;
 use RoundlyConsulting\Alerts\Status\HealthReport;
 use RoundlyConsulting\Alerts\Support\AlertModel;
@@ -20,8 +20,12 @@ use RoundlyConsulting\Alerts\Support\MonitorOptions;
  * Builds a current health report from the scheduled HealthCheck rows and their
  * latest open alerts, optionally scoped to a single notifiable and/or tags.
  */
-final class BuildHealthReportAction
+final readonly class BuildHealthReportAction
 {
+    public function __construct(
+        private HealthManager $health,
+    ) {}
+
     /**
      * @param  list<string>|null  $tags
      */
@@ -89,7 +93,7 @@ final class BuildHealthReportAction
 
     private function name(HealthCheck $healthCheck): string
     {
-        $check = Health::find($healthCheck->health_check);
+        $check = $this->health->find($healthCheck->health_check);
 
         return $check?->name() ?? $healthCheck->health_check;
     }

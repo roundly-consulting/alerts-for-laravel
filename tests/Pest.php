@@ -34,6 +34,7 @@ uses(TestCase::class)->in(
     'DataTransferObjects',
     'Enums',
     'Escalation',
+    'Feature',
     'Flap',
     'History',
     'Http',

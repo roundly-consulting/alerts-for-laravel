@@ -8,9 +8,11 @@ use Illuminate\Database\Eloquent\Model;
 use RoundlyConsulting\Alerts\DataTransferObjects\ScheduleHealthCheckData;
 use RoundlyConsulting\Alerts\Enums\Frequency;
 use RoundlyConsulting\Alerts\HealthCheck;
+use RoundlyConsulting\Alerts\HealthManager;
 
 /**
- * Fluent builder for attaching a scheduled health check to a notifiable model.
+ * Fluent builder for attaching a scheduled health check to a notifiable model,
+ * returned by `Health::for($notifiable)->monitor($check)`.
  */
 final class PendingScheduledCheck
 {
@@ -41,7 +43,11 @@ final class PendingScheduledCheck
     /** @var array<string, mixed> */
     private array $meta = [];
 
+    /**
+     * @internal build it with `Health::for($notifiable)->monitor($check)`
+     */
     public function __construct(
+        private readonly HealthManager $health,
         private readonly Model $notifiable,
         private readonly string $check,
     ) {}
@@ -206,15 +212,6 @@ final class PendingScheduledCheck
             meta: $this->meta,
         );
 
-        return HealthCheckModel::class()::create([
-            'notifiable_type' => $this->notifiable->getMorphClass(),
-            'notifiable_id' => $this->notifiable->getKey(),
-            'health_check' => $data->key(),
-            'frequency' => $data->cronFrequency(),
-            'max_attempts' => $data->maxAttempts,
-            'decay_minutes' => $data->decayMinutes,
-            'tags' => $data->tags === [] ? null : $data->tags,
-            'meta' => $data->metaWithOptions(),
-        ]);
+        return $this->health->scheduleFor($this->notifiable, $data);
     }
 }

@@ -30,10 +30,13 @@ use Throwable;
  *        -> mute gate -> flap gate -> open/escalate/notify | recover gate -> recover
  *
  * All per-check declarations are read off the persisted HealthCheck row (not a
- * transient Check instance) so they survive queue serialization. Shared by the
- * queued job and the synchronous Health::run() helper.
+ * transient Check instance) so they survive queue serialization.
+ *
+ * @internal the pipeline behind the queued HealthCheckJob and RunHealthCheckNowAction;
+ *           hosts (and a custom `alerts.job`) run a scheduled row with
+ *           `Health::for($notifiable)->run($healthCheck)`
  */
-final class RunHealthCheckAction
+final readonly class RunHealthCheckAction
 {
     public function execute(HealthCheck $healthCheck): CheckResult
     {

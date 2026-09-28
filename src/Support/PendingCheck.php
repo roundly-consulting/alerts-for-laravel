@@ -6,7 +6,7 @@ namespace RoundlyConsulting\Alerts\Support;
 
 use Closure;
 use RoundlyConsulting\Alerts\DataTransferObjects\ScheduleHealthCheckData;
-use RoundlyConsulting\Alerts\Health;
+use RoundlyConsulting\Alerts\HealthManager;
 
 /**
  * Mutable configuration for an inline closure-based check, returned by
@@ -44,7 +44,7 @@ final class PendingCheck
     private array $escalation = [];
 
     public function __construct(
-        private readonly Health $health,
+        private readonly HealthManager $health,
         public readonly string $key,
         public readonly Closure $callback,
     ) {}
@@ -192,7 +192,7 @@ final class PendingCheck
         return $this->decayMinutes;
     }
 
-    public function health(): Health
+    public function health(): HealthManager
     {
         return $this->health;
     }

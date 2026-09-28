@@ -46,9 +46,9 @@ it('records the run but suppresses notifications while muted by key', function (
     User::create(['email' => 'a@b.com']);
     $healthCheck = mutedHealthCheck($team);
 
-    Health::mute('example_health_check');
+    Health::silences()->mute('example_health_check');
 
-    expect(Health::isMuted('example_health_check'))->toBeTrue();
+    expect(Health::silences()->isMuted('example_health_check'))->toBeTrue();
 
     app(RunHealthCheckAction::class)->execute($healthCheck);
 
@@ -65,7 +65,7 @@ it('mutes every check carrying a tag', function () {
     User::create(['email' => 'a@b.com']);
     $healthCheck = mutedHealthCheck($team, ['critical']);
 
-    Health::mute('critical');
+    Health::silences()->mute('critical');
 
     app(RunHealthCheckAction::class)->execute($healthCheck);
 
@@ -79,7 +79,7 @@ it('mutes everything with the global key', function () {
     User::create(['email' => 'a@b.com']);
     $healthCheck = mutedHealthCheck($team);
 
-    Health::mute('*');
+    Health::silences()->mute('*');
 
     app(RunHealthCheckAction::class)->execute($healthCheck);
 
@@ -95,11 +95,11 @@ it('expires a mute after its until moment', function () {
     User::create(['email' => 'a@b.com']);
     $healthCheck = mutedHealthCheck($team);
 
-    Health::mute('example_health_check', until: now()->addMinutes(5));
+    Health::silences()->mute('example_health_check', until: now()->addMinutes(5));
 
     Carbon::setTestNow('2026-06-20 12:10:00');
 
-    expect(Health::isMuted('example_health_check'))->toBeFalse();
+    expect(Health::silences()->isMuted('example_health_check'))->toBeFalse();
 
     app(RunHealthCheckAction::class)->execute($healthCheck);
 
@@ -115,10 +115,10 @@ it('restores notifications after unmute', function () {
     User::create(['email' => 'a@b.com']);
     $healthCheck = mutedHealthCheck($team);
 
-    Health::mute('example_health_check');
-    Health::unmute('example_health_check');
+    Health::silences()->mute('example_health_check');
+    Health::silences()->unmute('example_health_check');
 
-    expect(Health::isMuted('example_health_check'))->toBeFalse();
+    expect(Health::silences()->isMuted('example_health_check'))->toBeFalse();
 
     app(RunHealthCheckAction::class)->execute($healthCheck);
 
@@ -129,21 +129,21 @@ it('only affects the scoped notifiable for a notifiable-scoped mute', function (
     $team = Team::create();
     $other = Team::create();
 
-    Health::mute('example_health_check', notifiable: $team);
+    Health::silences()->mute('example_health_check', for: $team);
 
-    expect(Health::isMuted('example_health_check', $team))->toBeTrue()
-        ->and(Health::isMuted('example_health_check', $other))->toBeFalse();
+    expect(Health::silences()->isMuted('example_health_check', $team))->toBeTrue()
+        ->and(Health::silences()->isMuted('example_health_check', $other))->toBeFalse();
 });
 
 it('unmutes a notifiable-scoped silence without touching global ones', function () {
     $team = Team::create();
 
-    Health::mute('example_health_check');
-    Health::mute('example_health_check', notifiable: $team);
+    Health::silences()->mute('example_health_check');
+    Health::silences()->mute('example_health_check', for: $team);
 
-    Health::unmute('example_health_check', $team);
+    Health::silences()->unmute('example_health_check', $team);
 
-    expect(Health::isMuted('example_health_check', $team))->toBeTrue() // global still active
+    expect(Health::silences()->isMuted('example_health_check', $team))->toBeTrue() // global still active
         ->and(AlertSilence::query()->whereNotNull('notifiable_id')->count())->toBe(0);
 });
 
@@ -164,5 +164,5 @@ it('ignores silences when the master switch is off', function () {
 
     AlertSilence::factory()->create(['key' => 'example_health_check']);
 
-    expect(Health::isMuted('example_health_check'))->toBeFalse();
+    expect(Health::silences()->isMuted('example_health_check'))->toBeFalse();
 });

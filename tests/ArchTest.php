@@ -5,9 +5,9 @@ declare(strict_types=1);
 use RoundlyConsulting\Alerts\Alert;
 use RoundlyConsulting\Alerts\AlertSilence;
 use RoundlyConsulting\Alerts\Check;
-use RoundlyConsulting\Alerts\Health;
 use RoundlyConsulting\Alerts\HealthCheck;
 use RoundlyConsulting\Alerts\HealthCheckRun;
+use RoundlyConsulting\Alerts\HealthManager;
 use RoundlyConsulting\Testing\Arch\ArchPresets;
 
 /**
@@ -22,7 +22,7 @@ ArchPresets::strictTypes('RoundlyConsulting\Alerts');
  *  - the four models `config/alerts.php` invites a host to swap — pinned instead by the
  *    preset below, which is the deliberate tension the two presets exist to hold;
  *  - Check, the contract every health check (built-in or host-written) extends;
- *  - Health, which the shipped `Testing\HealthFake` extends — `Health::fake()` swaps the
+ *  - HealthManager, which the shipped `Testing\HealthFake` extends — `Health::fake()` swaps the
  *    container binding for the subclass, so finalising it would break the package's own
  *    documented testing surface.
  */
@@ -32,7 +32,7 @@ ArchPresets::finalByDefault('RoundlyConsulting\Alerts', [
     HealthCheck::class,
     HealthCheckRun::class,
     Check::class,
-    Health::class,
+    HealthManager::class,
 ]);
 
 /**

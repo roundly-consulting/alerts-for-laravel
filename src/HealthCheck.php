@@ -124,6 +124,15 @@ class HealthCheck extends Model
         return array_values(array_unique([...$rowTags, ...$checkTags]));
     }
 
+    /**
+     * Whether this row is scheduled against the given notifiable.
+     */
+    public function isScheduledFor(Model $notifiable): bool
+    {
+        return $this->notifiable_type === $notifiable->getMorphClass()
+            && (string) $this->notifiable_id === (string) $notifiable->getKey();
+    }
+
     public function isDue(): bool
     {
         return (new CronSchedule($this->frequency))->isDue(now());

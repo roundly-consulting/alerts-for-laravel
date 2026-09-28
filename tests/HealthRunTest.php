@@ -23,7 +23,7 @@ it('runs a check synchronously and opens an alert', function () {
     $team = Team::create();
     User::create(['email' => 'john@doe.com']);
 
-    $result = Health::run(ExampleHealthCheck::class, $team);
+    $result = Health::for($team)->run(ExampleHealthCheck::class);
 
     expect($result)->toBeInstanceOf(CheckResult::class)
         ->and($result->status)->toBe(Status::Failed);
@@ -42,10 +42,10 @@ it('recovers an alert when a previously failing check passes', function () {
     $team = Team::create();
 
     ExampleHealthCheck::$ok = false;
-    Health::run(ExampleHealthCheck::class, $team);
+    Health::for($team)->run(ExampleHealthCheck::class);
 
     ExampleHealthCheck::$ok = true;
-    Health::run(ExampleHealthCheck::class, $team);
+    Health::for($team)->run(ExampleHealthCheck::class);
 
     Event::assertDispatched(HealthCheckRecovered::class);
     expect($team->alerts()->whereNotNull('recovered_at')->count())->toBe(1);
@@ -54,13 +54,13 @@ it('recovers an alert when a previously failing check passes', function () {
 it('accepts a check instance', function () {
     $team = Team::create();
 
-    $result = Health::run(new ExampleHealthCheck, $team);
+    $result = Health::for($team)->run(new ExampleHealthCheck);
 
     expect($result->isOk)->toBeTrue();
 });
 
 it('rejects a class that is not a check', function () {
-    Health::run(stdClass::class, Team::create());
+    Health::for(Team::create())->run(stdClass::class);
 })->throws(InvalidHealthCheck::class);
 
 it('reads the overall status via the facade', function () {

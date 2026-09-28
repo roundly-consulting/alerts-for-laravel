@@ -4,42 +4,57 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Alerts\Facades;
 
-use Carbon\CarbonInterface;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Facade;
-use RoundlyConsulting\Alerts\AlertSilence;
 use RoundlyConsulting\Alerts\Check;
-use RoundlyConsulting\Alerts\CheckResult;
 use RoundlyConsulting\Alerts\Enums\Status;
+use RoundlyConsulting\Alerts\HealthManager;
 use RoundlyConsulting\Alerts\Status\HealthReport;
+use RoundlyConsulting\Alerts\Support\NotifiableHealth;
 use RoundlyConsulting\Alerts\Support\PendingCheck;
+use RoundlyConsulting\Alerts\Support\Silences;
 use RoundlyConsulting\Alerts\Testing\HealthFake;
 
 /**
- * @method static \RoundlyConsulting\Alerts\Health checks(array<int, string|object> $checks)
- * @method static \RoundlyConsulting\Alerts\Health check(string|object $healthCheck)
+ * @method static HealthManager checks(array<int, string|object> $checks)
+ * @method static HealthManager check(string|object $healthCheck)
  * @method static PendingCheck define(string $key, Closure $callback)
- * @method static \RoundlyConsulting\Alerts\Health register(Check $check)
  * @method static Collection<string, Check> all()
  * @method static Check|null find(string $key)
- * @method static CheckResult run(string|Check $check, Model $notifiable)
- * @method static HealthReport report(Model|null $notifiable = null, list<string>|null $tags = null)
- * @method static Status status(Model|null $notifiable = null)
- * @method static AlertSilence mute(string $key, CarbonInterface|null $until = null, Model|null $notifiable = null, string|null $reason = null)
- * @method static void unmute(string $key, Model|null $notifiable = null)
- * @method static bool isMuted(string $key, Model|null $notifiable = null)
+ * @method static NotifiableHealth for(Model $notifiable)
+ * @method static HealthReport report(list<string>|null $tags = null)
+ * @method static Status status(list<string>|null $tags = null)
+ * @method static Silences silences()
+ * @method static int runDue()
+ * @method static int prune(int|null $days = null)
  * @method static Route routes(string|null $uri = null)
- * @method static HealthFake fake()
  *
- * @see \RoundlyConsulting\Alerts\Health
+ * @see HealthManager
  */
 final class Health extends Facade
 {
+    /**
+     * Swap the manager for a recording fake that keeps the registered checks.
+     */
+    public static function fake(): HealthFake
+    {
+        $manager = self::getFacadeRoot();
+
+        $fake = new HealthFake(
+            self::getFacadeApplication() ?? app(),
+            $manager instanceof HealthManager ? $manager->all()->all() : [],
+        );
+
+        self::swap($fake);
+
+        return $fake;
+    }
+
     protected static function getFacadeAccessor(): string
     {
-        return 'health';
+        return HealthManager::class;
     }
 }

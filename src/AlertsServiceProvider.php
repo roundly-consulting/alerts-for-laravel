@@ -43,8 +43,7 @@ final class AlertsServiceProvider extends PackageServiceProvider
     {
         parent::register();
 
-        $this->app->singleton(Health::class);
-        $this->app->alias(Health::class, 'health');
+        $this->app->singleton(HealthManager::class);
     }
 
     public function boot(): void
@@ -161,7 +160,7 @@ final class AlertsServiceProvider extends PackageServiceProvider
         $checks = config('alerts.checks', []);
 
         if ($checks !== []) {
-            $this->app->make(Health::class)->checks($checks);
+            $this->app->make(HealthManager::class)->checks($checks);
         }
     }
 }

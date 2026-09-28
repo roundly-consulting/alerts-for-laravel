@@ -25,8 +25,8 @@ it('scopes the report to a tag', function () {
     $team = Team::create();
     $team->monitorCheck(ExampleHealthCheck::class)->tags(['db'])->save();
 
-    expect(Health::report($team, ['db'])->checks())->toHaveCount(1)
-        ->and(Health::report($team, ['cache'])->checks())->toHaveCount(0);
+    expect(Health::for($team)->report(['db'])->checks())->toHaveCount(1)
+        ->and(Health::for($team)->report(['cache'])->checks())->toHaveCount(0);
 });
 
 it('filters an in-memory report by tag', function () {

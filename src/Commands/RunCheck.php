@@ -38,7 +38,7 @@ final class RunCheck extends Command
         }
 
         $result = $notifiable instanceof Model
-            ? Health::run($check, $notifiable)
+            ? Health::for($notifiable)->run($check)
             : $check->check();
 
         $this->render($result);

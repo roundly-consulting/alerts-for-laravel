@@ -105,7 +105,7 @@ it('honours a host run model through the history flow', function (): void {
 
 it('honours a host silence model through the mute flow', function (): void {
     expect('alerts.silence-model')->toHonourModelSwap(CustomAlertSilence::class, fn (): array => [
-        Health::mute('example_health_check'),
+        Health::silences()->mute('example_health_check'),
     ]);
 });
 
@@ -186,10 +186,10 @@ it('creates a health check through the trait helper on the host model', function
 it('mutes and recovers through the host models', function (): void {
     Notification::fake();
 
-    $silence = Health::mute('example_health_check');
+    $silence = Health::silences()->mute('example_health_check');
 
     expect($silence)->toBeInstanceOf(CustomAlertSilence::class)
-        ->and(Health::isMuted('example_health_check'))->toBeTrue();
+        ->and(Health::silences()->isMuted('example_health_check'))->toBeTrue();
 
     ExampleHealthCheck::$ok = false;
     ExampleHealthCheck::$status = Status::Failed;
@@ -205,9 +205,9 @@ it('mutes and recovers through the host models', function (): void {
 
     Notification::assertNothingSent();
 
-    Health::unmute('example_health_check');
+    Health::silences()->unmute('example_health_check');
 
-    expect(Health::isMuted('example_health_check'))->toBeFalse();
+    expect(Health::silences()->isMuted('example_health_check'))->toBeFalse();
 
     ExampleHealthCheck::$ok = true;
     ExampleHealthCheck::$status = Status::Ok;
@@ -231,7 +231,7 @@ it('reports uptime and latency off the host run model', function (): void {
         HealthCheckModel::query()->findOrFail($monitor->getKey()),
     );
 
-    $report = Health::report($this->team);
+    $report = Health::for($this->team)->report();
 
     expect($report->checks())->toHaveCount(1)
         ->and($report->checks()[0]->uptime)->toBe(100.0);

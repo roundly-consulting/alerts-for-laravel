@@ -49,7 +49,7 @@ final class ClosureCheck extends Check
 
     /**
      * Declarative monitor options (failAfter/recoverAfter/timeout/routing/escalation)
-     * as a meta payload, used to seed an ad-hoc row in Health::run().
+     * as a meta payload, used to seed an ad-hoc row in Health::for()->run().
      *
      * @return array<string, mixed>
      */

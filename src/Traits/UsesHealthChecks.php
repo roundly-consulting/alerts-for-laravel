@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 use RoundlyConsulting\Alerts\Alert;
 use RoundlyConsulting\Alerts\DataTransferObjects\ScheduleHealthCheckData;
 use RoundlyConsulting\Alerts\HealthCheck;
+use RoundlyConsulting\Alerts\HealthManager;
 use RoundlyConsulting\Alerts\Support\AlertModel;
 use RoundlyConsulting\Alerts\Support\HealthCheckModel;
 use RoundlyConsulting\Alerts\Support\PendingScheduledCheck;
@@ -48,16 +49,14 @@ trait UsesHealthChecks
         array $tags = [],
         array $meta = [],
     ): HealthCheck {
-        return HealthCheckModel::class()::create([
-            'notifiable_type' => $this->getMorphClass(),
-            'notifiable_id' => $this->getKey(),
-            'health_check' => $healthCheckKey,
-            'frequency' => $frequency,
-            'max_attempts' => $maxAttempts,
-            'decay_minutes' => $decayMinutes,
-            'tags' => $tags === [] ? null : $tags,
-            'meta' => $meta,
-        ]);
+        return $this->monitor(new ScheduleHealthCheckData(
+            check: $healthCheckKey,
+            frequency: $frequency,
+            maxAttempts: $maxAttempts,
+            decayMinutes: $decayMinutes,
+            tags: $tags,
+            meta: $meta,
+        ));
     }
 
     /**
@@ -65,14 +64,7 @@ trait UsesHealthChecks
      */
     public function monitor(ScheduleHealthCheckData $data): HealthCheck
     {
-        return $this->createHealthCheck(
-            healthCheckKey: $data->key(),
-            frequency: $data->cronFrequency(),
-            maxAttempts: $data->maxAttempts,
-            decayMinutes: $data->decayMinutes,
-            tags: $data->tags,
-            meta: $data->metaWithOptions(),
-        );
+        return app(HealthManager::class)->for($this)->schedule($data);
     }
 
     /**
@@ -80,6 +72,6 @@ trait UsesHealthChecks
      */
     public function monitorCheck(string $check): PendingScheduledCheck
     {
-        return new PendingScheduledCheck($this, $check);
+        return app(HealthManager::class)->for($this)->monitor($check);
     }
 }

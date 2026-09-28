@@ -5,10 +5,9 @@ declare(strict_types=1);
 namespace RoundlyConsulting\Alerts\Commands;
 
 use Illuminate\Console\Command;
-use RoundlyConsulting\Alerts\Actions\BuildHealthReportAction;
 use RoundlyConsulting\Alerts\Check;
-use RoundlyConsulting\Alerts\Facades\Health;
 use RoundlyConsulting\Alerts\HealthCheck;
+use RoundlyConsulting\Alerts\HealthManager;
 use RoundlyConsulting\Alerts\Status\CheckStatus;
 use RoundlyConsulting\Alerts\Support\HealthCheckModel;
 
@@ -18,12 +17,12 @@ final class ListChecks extends Command
 
     protected $description = 'List every registered check with its frequency, status, and tags';
 
-    public function handle(BuildHealthReportAction $action): int
+    public function handle(HealthManager $health): int
     {
         $tag = $this->option('tag');
         $tag = is_string($tag) && $tag !== '' ? $tag : null;
 
-        $checks = Health::all();
+        $checks = $health->all();
 
         if ($tag !== null) {
             $checks = $checks->filter(fn (Check $check): bool => in_array($tag, $check->tags(), true)
@@ -36,10 +35,10 @@ final class ListChecks extends Command
             return self::SUCCESS;
         }
 
-        $statuses = collect($action->execute()->checks())
+        $statuses = collect($health->report()->checks())
             ->keyBy(fn (CheckStatus $status): string => $status->key);
 
-        $rows = $checks->map(function (Check $check) use ($statuses, $tag): array {
+        $rows = $checks->map(function (Check $check) use ($health, $statuses, $tag): array {
             $row = $this->scheduledRow($check->key(), $tag);
             $status = $statuses->get($check->key());
 
@@ -49,7 +48,7 @@ final class ListChecks extends Command
                 $row === null ? '—' : $this->frequencyLabel($check, $row->frequency),
                 $row?->latestRun()?->ran_at?->toDateTimeString() ?? '—',
                 $status?->status->label() ?? '—',
-                Health::isMuted($check->key()) ? 'yes' : 'no',
+                $health->silences()->isMuted($check->key()) ? 'yes' : 'no',
                 $this->tagList($check, $row),
             ];
         })->all();

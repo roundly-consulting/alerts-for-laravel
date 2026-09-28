@@ -6,16 +6,17 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 use RoundlyConsulting\Alerts\AlertsServiceProvider;
-use RoundlyConsulting\Alerts\Health;
 use RoundlyConsulting\Alerts\HealthCheck;
+use RoundlyConsulting\Alerts\HealthManager;
 
 it('merges the package config', function (): void {
     expect(config('alerts.health-check'))->toBe(HealthCheck::class);
 });
 
-it('binds the health manager as a singleton behind both keys', function (): void {
-    expect(app(Health::class))->toBeInstanceOf(Health::class)
-        ->and(app('health'))->toBe(app(Health::class));
+it('binds the health manager as a singleton under its class name only', function (): void {
+    expect(app(HealthManager::class))->toBeInstanceOf(HealthManager::class)
+        ->and(app(HealthManager::class))->toBe(app(HealthManager::class))
+        ->and(app()->bound('health'))->toBeFalse();
 });
 
 it('loads the package translations', function (): void {

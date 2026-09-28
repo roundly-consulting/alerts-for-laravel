@@ -5,8 +5,7 @@ declare(strict_types=1);
 namespace RoundlyConsulting\Alerts\Commands;
 
 use Illuminate\Console\Command;
-use RoundlyConsulting\Alerts\HealthCheck;
-use RoundlyConsulting\Alerts\Support\HealthCheckModel;
+use RoundlyConsulting\Alerts\HealthManager;
 
 final class PerformHealthChecks extends Command
 {
@@ -14,15 +13,11 @@ final class PerformHealthChecks extends Command
 
     protected $description = 'Perform health checks and send notifications when necessary';
 
-    public function handle(): int
+    public function handle(HealthManager $health): int
     {
-        HealthCheckModel::query()->each(function (HealthCheck $healthCheck): void {
-            if ($healthCheck->isDue()) {
-                $healthCheck->dispatchHealthCheckJob();
-            }
-        });
+        $queued = $health->runDue();
 
-        $this->info('All health checks queued.');
+        $this->info("Queued {$queued} due health check(s).");
 
         return self::SUCCESS;
     }

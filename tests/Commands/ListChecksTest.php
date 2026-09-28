@@ -33,7 +33,7 @@ it('shows a check as muted', function () {
 
     $team = Team::create();
     $team->monitorCheck(ExampleHealthCheck::class)->save();
-    Health::mute('example_health_check');
+    Health::silences()->mute('example_health_check');
 
     Artisan::call('alerts:list');
 

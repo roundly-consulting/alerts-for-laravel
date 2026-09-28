@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace RoundlyConsulting\Alerts\Commands;
 
 use Illuminate\Console\Command;
-use RoundlyConsulting\Alerts\Actions\BuildHealthReportAction;
+use RoundlyConsulting\Alerts\HealthManager;
 use RoundlyConsulting\Alerts\Status\CheckStatus;
 
 final class HealthCheckStatus extends Command
@@ -14,12 +14,12 @@ final class HealthCheckStatus extends Command
 
     protected $description = 'Show the current health status of every scheduled check';
 
-    public function handle(BuildHealthReportAction $action): int
+    public function handle(HealthManager $health): int
     {
         $tag = $this->option('tag');
         $tags = is_string($tag) && $tag !== '' ? [$tag] : null;
 
-        $report = $action->execute(tags: $tags);
+        $report = $health->report($tags);
 
         if ($report->checks() === []) {
             $this->info('No health checks are scheduled.');

@@ -44,7 +44,7 @@ it('finds health check in memory or returns null', function () {
 });
 
 it('uses singleton and can be accessed via facade', function () {
-    $health = resolve(RoundlyConsulting\Alerts\Health::class);
+    $health = resolve(RoundlyConsulting\Alerts\HealthManager::class);
     expect($health->find('example_health_check'))->toBeNull();
 
     $health->check(ExampleHealthCheck::class);

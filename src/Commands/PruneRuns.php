@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace RoundlyConsulting\Alerts\Commands;
 
 use Illuminate\Console\Command;
-use RoundlyConsulting\Alerts\Support\HealthCheckRunModel;
+use RoundlyConsulting\Alerts\HealthManager;
 
 final class PruneRuns extends Command
 {
@@ -13,14 +13,14 @@ final class PruneRuns extends Command
 
     protected $description = 'Delete health check run history older than the retention window';
 
-    public function handle(): int
+    public function handle(HealthManager $health): int
     {
         $days = $this->option('days');
-        $days = is_numeric($days) ? (int) $days : (int) config('alerts.history.retention_days', 30);
+        $days = is_numeric($days) ? (int) $days : null;
 
-        $deleted = HealthCheckRunModel::query()
-            ->where('ran_at', '<', now()->subDays($days))
-            ->delete();
+        $deleted = $health->prune($days);
+
+        $days ??= (int) config('alerts.history.retention_days', 30);
 
         $this->info("Pruned {$deleted} health check run(s) older than {$days} day(s).");
 

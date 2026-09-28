@@ -12,7 +12,7 @@ it('does nothing when no health check is defined in database', function () {
 
     $this->artisan(PerformHealthChecks::class)
         ->assertSuccessful()
-        ->expectsOutput('All health checks queued.');
+        ->expectsOutput('Queued 0 due health check(s).');
 
     Queue::assertNothingPushed();
 });
@@ -26,7 +26,7 @@ it('does not queue health checks that are not due', function () {
 
     $this->artisan(PerformHealthChecks::class)
         ->assertSuccessful()
-        ->expectsOutput('All health checks queued.');
+        ->expectsOutput('Queued 0 due health check(s).');
 
     Queue::assertNothingPushed();
 });
@@ -40,7 +40,7 @@ it('it queues health check when its due', function () {
 
     $this->artisan(PerformHealthChecks::class)
         ->assertSuccessful()
-        ->expectsOutput('All health checks queued.');
+        ->expectsOutput('Queued 1 due health check(s).');
 
     Queue::assertPushed(HealthCheckJob::class, function (HealthCheckJob $job) use ($healthCheck) {
         return $job->healthCheck->is($healthCheck);

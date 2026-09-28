@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use RoundlyConsulting\Alerts\CheckResult;
 use RoundlyConsulting\Alerts\Facades\Health;
-use RoundlyConsulting\Alerts\Health as HealthManager;
+use RoundlyConsulting\Alerts\HealthManager;
 
 it('exposes its parent health manager', function () {
     $pending = Health::define('k', fn () => CheckResult::ok());

@@ -56,14 +56,14 @@ it('mirrors the declarative options on the inline closure builder', function () 
         ->and($meta[MonitorOptions::ESCALATION])->toBe([2 => 'oncall']);
 });
 
-it('seeds an ad-hoc row from inline closure options on Health::run', function () {
+it('seeds an ad-hoc row from inline closure options on Health::for()->run', function () {
     $team = Team::create();
 
     Health::define('flaky', fn () => CheckResult::failed('down'))
         ->failAfter(5)
         ->tags(['inline']);
 
-    Health::run(Health::find('flaky'), $team);
+    Health::for($team)->run(Health::find('flaky'));
 
     $row = $team->healthChecks()->where('health_check', 'flaky')->first();
 
