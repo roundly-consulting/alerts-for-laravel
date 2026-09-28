@@ -103,7 +103,7 @@ final readonly class RunHealthCheckAction
             'health_check_id' => $healthCheck->getKey(),
             'status' => $result->status,
             'duration_ms' => $durationMs,
-            'message' => $result->message !== '' ? $result->message : null,
+            'message' => $result->storedMessage(),
             'meta' => $result->meta,
             'ran_at' => now(),
         ]);
@@ -271,7 +271,7 @@ final readonly class RunHealthCheckAction
             'status' => $result->status,
             'escalation_level' => 0,
             'triggered_at' => now(),
-            'message' => $result->message,
+            'message' => $result->storedMessage(),
             'meta' => $meta,
         ]);
     }

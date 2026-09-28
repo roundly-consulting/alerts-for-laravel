@@ -19,7 +19,7 @@ return new class extends Migration
             $table->foreignId('health_check_id')->references('id')->on('health_checks')->onDelete('cascade');
             $table->string('status')->default('failed');
             $table->unsignedSmallInteger('escalation_level')->default(0);
-            $table->string('message')->nullable();
+            $table->text('message')->nullable();
             $table->jsonb('meta')->nullable();
             $table->timestamp('triggered_at');
             $table->timestamp('recovered_at')->nullable();

@@ -70,3 +70,25 @@ it('reads the overall status via the facade', function () {
 
     expect(Health::status())->toBe(Status::Ok);
 });
+
+it('survives a failure message longer than any varchar column', function () {
+    Notification::fake();
+
+    $team = Team::create();
+    $long = 'SQLSTATE[08006] connection failed: '.str_repeat('x', 5000);
+
+    Health::define('flaky', function () use ($long): never {
+        throw new RuntimeException($long);
+    });
+
+    $result = Health::for($team)->run(Health::find('flaky'));
+
+    // The caller still gets the whole text; only what is persisted is bounded.
+    expect($result->status)->toBe(Status::Failed)
+        ->and($result->message)->toBe($long)
+        ->and(mb_strlen((string) RoundlyConsulting\Alerts\Alert::sole()->message))
+        ->toBeLessThanOrEqual(CheckResult::MAX_STORED_MESSAGE_LENGTH)
+        ->and(mb_strlen((string) RoundlyConsulting\Alerts\HealthCheckRun::sole()->message))
+        ->toBeLessThanOrEqual(CheckResult::MAX_STORED_MESSAGE_LENGTH)
+        ->and(RoundlyConsulting\Alerts\HealthCheckRun::sole()->meta['exception_message'])->toBe($long);
+});

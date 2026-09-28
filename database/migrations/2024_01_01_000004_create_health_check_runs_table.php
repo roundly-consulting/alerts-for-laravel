@@ -15,7 +15,7 @@ return new class extends Migration
             $table->foreignId('health_check_id')->constrained('health_checks')->cascadeOnDelete();
             $table->string('status');
             $table->unsignedInteger('duration_ms')->default(0);
-            $table->string('message')->nullable();
+            $table->text('message')->nullable();
             $table->jsonb('meta')->nullable();
             $table->timestamp('ran_at')->index();
 

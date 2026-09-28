@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Alerts;
 
+use Illuminate\Support\Str;
 use RoundlyConsulting\Alerts\Enums\Status;
 use Throwable;
 
@@ -14,6 +15,14 @@ final class CheckResult
      * the persisted meta payload small.
      */
     public const int TRACE_FRAMES = 15;
+
+    /**
+     * Longest message persisted on a run or alert row. An exception message can embed a
+     * whole SQL statement plus connection details; the columns are `text`, and the bound
+     * keeps rows (and the notifications built from them) a sane size. The full text stays
+     * on the returned result and, for an exception, in `meta['exception_message']`.
+     */
+    public const int MAX_STORED_MESSAGE_LENGTH = 1000;
 
     public readonly Status $status;
 
@@ -35,6 +44,19 @@ final class CheckResult
         $this->status = $status instanceof Status
             ? $status
             : ($status ? Status::Ok : Status::Failed);
+    }
+
+    /**
+     * The message as persisted: null when empty, otherwise bounded to
+     * {@see self::MAX_STORED_MESSAGE_LENGTH} characters.
+     */
+    public function storedMessage(): ?string
+    {
+        if ($this->message === '') {
+            return null;
+        }
+
+        return Str::limit($this->message, self::MAX_STORED_MESSAGE_LENGTH - 3);
     }
 
     /**
