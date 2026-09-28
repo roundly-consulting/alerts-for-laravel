@@ -99,6 +99,12 @@ ArchPresets::runtimeRequireIsWhitelisted(__DIR__.'/../composer.json');
 ArchPresets::noDebuggingLeftovers();
 
 /**
+ * One path: UsesHealthChecks (the only model trait) reaches behaviour through HealthManager,
+ * never an action, so `Health::fake()` sees `monitorCheck()` / `monitor()` / `createHealthCheck()`.
+ */
+ArchPresets::modelsGoThroughTheFacade('RoundlyConsulting\Alerts');
+
+/**
  * Bespoke and kept: alerts parses cron expressions itself (Support/CronSchedule) rather
  * than taking a third-party cron vendor into `require`. No preset expresses this.
  */
