@@ -145,14 +145,16 @@ final class PendingCheck
     }
 
     /**
-     * The declarative monitor options as a meta payload under their reserved keys.
-     *
-     * @return array<string, mixed>
+     * Everything this definition declares for a row that runs it — the throttle and the
+     * monitor options — as schedule data. It seeds the on-demand row of a run-now and is
+     * the starting point of `Health::for($owner)->monitor($key)`.
      */
-    public function resolvedMeta(): array
+    public function scheduleData(): ScheduleHealthCheckData
     {
-        $data = new ScheduleHealthCheckData(
+        return new ScheduleHealthCheckData(
             check: $this->key,
+            maxAttempts: $this->maxAttempts,
+            decayMinutes: $this->decayMinutes,
             failAfter: $this->failAfter,
             recoverAfter: $this->recoverAfter,
             timeout: $this->timeout,
@@ -160,8 +162,16 @@ final class PendingCheck
             notifyViaLevels: $this->notifyViaLevels,
             escalation: $this->escalation,
         );
+    }
 
-        return $data->metaWithOptions();
+    /**
+     * The declarative monitor options as a meta payload under their reserved keys.
+     *
+     * @return array<string, mixed>
+     */
+    public function resolvedMeta(): array
+    {
+        return $this->scheduleData()->metaWithOptions();
     }
 
     public function resolvedName(): ?string

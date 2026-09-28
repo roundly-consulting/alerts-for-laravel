@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RoundlyConsulting\Alerts\Support;
 
 use Illuminate\Database\Eloquent\Model;
+use RoundlyConsulting\Alerts\Checks\ClosureCheck;
 use RoundlyConsulting\Alerts\DataTransferObjects\ScheduleHealthCheckData;
 use RoundlyConsulting\Alerts\Enums\Frequency;
 use RoundlyConsulting\Alerts\HealthCheck;
@@ -44,13 +45,23 @@ final class PendingScheduledCheck
     private array $meta = [];
 
     /**
+     * A monitor of an inline check starts from what its `define()` declared — the
+     * throttle, failAfter/recoverAfter, timeout, routing and escalation — and any call
+     * on this builder overrides it.
+     *
      * @internal build it with `Health::for($notifiable)->monitor($check)`
      */
     public function __construct(
         private readonly HealthManager $health,
         private readonly Model $notifiable,
         private readonly string $check,
-    ) {}
+    ) {
+        $inline = $health->find($check);
+
+        if ($inline instanceof ClosureCheck) {
+            $this->startFrom($inline->scheduleDefaults());
+        }
+    }
 
     public function everyMinute(): self
     {
@@ -193,6 +204,18 @@ final class PendingScheduledCheck
         $this->meta = $meta;
 
         return $this;
+    }
+
+    private function startFrom(ScheduleHealthCheckData $defaults): void
+    {
+        $this->maxAttempts = $defaults->maxAttempts;
+        $this->decayMinutes = $defaults->decayMinutes;
+        $this->failAfter = $defaults->failAfter;
+        $this->recoverAfter = $defaults->recoverAfter;
+        $this->timeout = $defaults->timeout;
+        $this->notifyVia = $defaults->notifyVia;
+        $this->notifyViaLevels = $defaults->notifyViaLevels;
+        $this->escalation = $defaults->escalation;
     }
 
     public function save(): HealthCheck

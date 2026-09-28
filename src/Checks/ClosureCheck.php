@@ -8,6 +8,7 @@ use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Notifications\Notification;
 use RoundlyConsulting\Alerts\Check;
 use RoundlyConsulting\Alerts\CheckResult;
+use RoundlyConsulting\Alerts\DataTransferObjects\ScheduleHealthCheckData;
 use RoundlyConsulting\Alerts\HealthCheck;
 use RoundlyConsulting\Alerts\Notifications\HealthCheckFailedNotification;
 use RoundlyConsulting\Alerts\Support\PendingCheck;
@@ -48,14 +49,13 @@ final class ClosureCheck extends Check
     }
 
     /**
-     * Declarative monitor options (failAfter/recoverAfter/timeout/routing/escalation)
-     * as a meta payload, used to seed an ad-hoc row in Health::for()->run().
-     *
-     * @return array<string, mixed>
+     * What the definition declares for a row that runs it: the throttle and the monitor
+     * options (failAfter/recoverAfter/timeout/routing/escalation). It keeps the on-demand
+     * row of `Health::for()->run()` in step and seeds `Health::for()->monitor($key)`.
      */
-    public function pendingMeta(): array
+    public function scheduleDefaults(): ScheduleHealthCheckData
     {
-        return $this->pending->resolvedMeta();
+        return $this->pending->scheduleData();
     }
 
     public function check(): CheckResult

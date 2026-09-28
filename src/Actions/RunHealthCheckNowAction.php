@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use RoundlyConsulting\Alerts\Check;
 use RoundlyConsulting\Alerts\CheckResult;
 use RoundlyConsulting\Alerts\Checks\ClosureCheck;
+use RoundlyConsulting\Alerts\DataTransferObjects\ScheduleHealthCheckData;
 use RoundlyConsulting\Alerts\Exceptions\InvalidHealthCheck;
 use RoundlyConsulting\Alerts\HealthCheck;
 use RoundlyConsulting\Alerts\Support\HealthCheckModel;
@@ -56,32 +57,45 @@ final readonly class RunHealthCheckNowAction
             return $scheduled;
         }
 
-        [$tags, $meta] = $this->seedFor($check);
+        $definition = $this->definition($check);
 
-        return $rows->whereNull('frequency')->firstOrCreate([], [
+        $row = $rows->whereNull('frequency')->firstOrCreate([], [
             'notifiable_type' => $notifiable->getMorphClass(),
             'notifiable_id' => $notifiable->getKey(),
             'health_check' => $check->key(),
             'frequency' => null,
-            'max_attempts' => 1,
-            'decay_minutes' => 1,
-            'tags' => $tags === [] ? null : $tags,
-            'meta' => $meta,
+            ...$definition,
         ]);
+
+        // An inline check's on-demand row has no builder of its own: it mirrors the
+        // definition, so a changed `define()->throttle()` or tag list takes effect on
+        // the next run. A class check's row keeps whatever it was seeded (or edited) with.
+        if ($check instanceof ClosureCheck && ! $row->wasRecentlyCreated && $row->fill($definition)->isDirty()) {
+            $row->save();
+        }
+
+        return $row;
     }
 
     /**
-     * Seed tags + declarative meta for an ad-hoc row from an inline closure check's
-     * pending options, so an ad-hoc run honours failAfter/timeout/etc.
+     * The columns an on-demand row takes from the check: its tags and, for an inline
+     * check, the throttle and monitor options it was defined with.
      *
-     * @return array{0: list<string>, 1: array<string, mixed>}
+     * @return array<string, mixed>
      */
-    private function seedFor(Check $check): array
+    private function definition(Check $check): array
     {
-        if ($check instanceof ClosureCheck) {
-            return [$check->tags(), $check->pendingMeta()];
-        }
+        $tags = $check->tags();
 
-        return [$check->tags(), []];
+        $data = $check instanceof ClosureCheck
+            ? $check->scheduleDefaults()
+            : new ScheduleHealthCheckData(check: $check->key());
+
+        return [
+            'max_attempts' => $data->maxAttempts,
+            'decay_minutes' => $data->decayMinutes,
+            'tags' => $tags === [] ? null : $tags,
+            'meta' => $data->metaWithOptions(),
+        ];
     }
 }

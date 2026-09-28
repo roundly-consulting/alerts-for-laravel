@@ -66,3 +66,63 @@ it('keeps two notifiables in separate renotification buckets', function (): void
     Notification::assertSentToTimes($first, ExampleNotification::class, 1);
     Notification::assertSentToTimes($second, ExampleNotification::class, 1);
 });
+
+it('applies an inline check\'s throttle when it is run now', function (): void {
+    Notification::fake();
+
+    $team = Team::create(['name' => 'Platform']);
+    User::create(['email' => 'owner@x.com']);
+
+    Health::define('redis-up', fn () => RoundlyConsulting\Alerts\CheckResult::failed('Redis down'))
+        ->throttle(maxAttempts: 1, decayMinutes: 15);
+
+    foreach (range(1, 3) as $run) {
+        Health::for($team)->run('redis-up');
+        $this->travel(2)->minutes();
+    }
+
+    $row = $team->healthChecks()->sole();
+
+    expect($row->max_attempts)->toBe(1)
+        ->and($row->decay_minutes)->toBe(15);
+
+    Notification::assertSentTimes(RoundlyConsulting\Alerts\Notifications\HealthCheckFailedNotification::class, 1);
+});
+
+it('starts a monitor of an inline check from its definition', function (): void {
+    $team = Team::create(['name' => 'Platform']);
+
+    Health::define('redis-up', fn () => true)
+        ->throttle(maxAttempts: 2, decayMinutes: 15)
+        ->failAfter(3)
+        ->timeout(4)
+        ->escalate([3 => 'oncall']);
+
+    $inherited = Health::for($team)->monitor('redis-up')->save();
+    $overridden = Health::for($team)->monitor('redis-up')->throttle(5, 30)->failAfter(1)->save();
+
+    expect($inherited->max_attempts)->toBe(2)
+        ->and($inherited->decay_minutes)->toBe(15)
+        ->and($inherited->options()->failAfter())->toBe(3)
+        ->and($inherited->options()->timeout())->toBe(4)
+        ->and($inherited->options()->escalation())->toBe([3 => 'oncall'])
+        ->and($overridden->max_attempts)->toBe(5)
+        ->and($overridden->decay_minutes)->toBe(30)
+        ->and($overridden->options()->failAfter())->toBe(1);
+});
+
+it('keeps an on-demand row in step with the inline definition', function (): void {
+    $team = Team::create(['name' => 'Platform']);
+
+    Health::define('redis-up', fn () => true)->throttle(1, 5);
+    Health::for($team)->run('redis-up');
+
+    Health::define('redis-up', fn () => true)->throttle(1, 30)->failAfter(2);
+    Health::for($team)->run('redis-up');
+
+    $row = $team->healthChecks()->sole();
+
+    expect($row->decay_minutes)->toBe(30)
+        ->and($row->options()->failAfter())->toBe(2)
+        ->and($row->consecutive_successes)->toBe(2);
+});
