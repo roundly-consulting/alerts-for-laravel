@@ -27,7 +27,7 @@ use RoundlyConsulting\Alerts\Support\Percentile;
  * @property string $notifiable_type
  * @property int $notifiable_id
  * @property string $health_check
- * @property string $frequency
+ * @property string|null $frequency NULL for an on-demand (run-now) row that is never scheduled
  * @property int $max_attempts
  * @property int $decay_minutes
  * @property int $consecutive_failures
@@ -133,8 +133,21 @@ class HealthCheck extends Model
             && (string) $this->notifiable_id === (string) $notifiable->getKey();
     }
 
+    /**
+     * Whether the scheduler queues this row. An on-demand row — seeded the first time
+     * a check is run now for an owner that has no schedule for it — never is.
+     */
+    public function isScheduled(): bool
+    {
+        return $this->frequency !== null;
+    }
+
     public function isDue(): bool
     {
+        if ($this->frequency === null) {
+            return false;
+        }
+
         return (new CronSchedule($this->frequency))->isDue(now());
     }
 

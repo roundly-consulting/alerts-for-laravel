@@ -15,10 +15,14 @@ use RoundlyConsulting\Alerts\Support\HealthCheckModel;
 /**
  * Runs a check synchronously against a notifiable through the full alert pipeline.
  *
- * Given a Check, the first run seeds an ad-hoc scheduled row (tags and, for an inline
- * check, its declarative options) so counters, history and alerts have somewhere to
- * live. Given one of the notifiable's scheduled rows, it runs that row as-is; a row
- * scheduled against another notifiable is refused.
+ * Given a Check, it runs through the notifiable's scheduled row for that check when
+ * one exists, so a manual run shares the monitor's counters, history and alerts.
+ * Otherwise it uses — seeding it on the first run — an ON-DEMAND row: frequency NULL,
+ * so the scheduler never queues it, carrying the check's tags and, for an inline
+ * check, its declarative options. Running a check now never starts monitoring it.
+ *
+ * Given one of the notifiable's rows, it runs that row as-is; a row scheduled against
+ * another notifiable is refused.
  */
 final readonly class RunHealthCheckNowAction
 {
@@ -41,14 +45,24 @@ final readonly class RunHealthCheckNowAction
 
     private function row(Check $check, Model $notifiable): HealthCheck
     {
+        $rows = HealthCheckModel::query()
+            ->where('notifiable_type', $notifiable->getMorphClass())
+            ->where('notifiable_id', $notifiable->getKey())
+            ->where('health_check', $check->key());
+
+        $scheduled = (clone $rows)->whereNotNull('frequency')->oldest('id')->first();
+
+        if ($scheduled !== null) {
+            return $scheduled;
+        }
+
         [$tags, $meta] = $this->seedFor($check);
 
-        return HealthCheckModel::query()->firstOrCreate([
+        return $rows->whereNull('frequency')->firstOrCreate([], [
             'notifiable_type' => $notifiable->getMorphClass(),
             'notifiable_id' => $notifiable->getKey(),
             'health_check' => $check->key(),
-        ], [
-            'frequency' => '* * * * *',
+            'frequency' => null,
             'max_attempts' => 1,
             'decay_minutes' => 1,
             'tags' => $tags === [] ? null : $tags,

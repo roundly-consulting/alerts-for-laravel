@@ -61,6 +61,9 @@ final class ListChecks extends Command
         return self::SUCCESS;
     }
 
+    /**
+     * The newest scheduled row for the key, falling back to an on-demand (run-now) row.
+     */
     private function scheduledRow(string $key, ?string $tag): ?HealthCheck
     {
         $query = HealthCheckModel::query()->where('health_check', $key);
@@ -69,7 +72,8 @@ final class ListChecks extends Command
             $query->whereJsonContains('tags', $tag);
         }
 
-        return $query->latest('id')->first();
+        return (clone $query)->whereNotNull('frequency')->latest('id')->first()
+            ?? $query->latest('id')->first();
     }
 
     private function rowHasTag(string $key, string $tag): bool
@@ -80,8 +84,12 @@ final class ListChecks extends Command
             ->exists();
     }
 
-    private function frequencyLabel(Check $check, string $cron): string
+    private function frequencyLabel(Check $check, ?string $cron): string
     {
+        if ($cron === null) {
+            return 'on demand';
+        }
+
         return $check->frequencies()[$cron] ?? $cron;
     }
 

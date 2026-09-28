@@ -20,7 +20,7 @@ final readonly class RunDueHealthChecksAction
     {
         $queued = 0;
 
-        HealthCheckModel::query()->each(function (HealthCheck $healthCheck) use (&$queued): void {
+        HealthCheckModel::query()->whereNotNull('frequency')->each(function (HealthCheck $healthCheck) use (&$queued): void {
             if ($healthCheck->isDue()) {
                 $healthCheck->dispatchHealthCheckJob();
                 $queued++;

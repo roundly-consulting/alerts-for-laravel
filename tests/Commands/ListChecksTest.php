@@ -62,3 +62,25 @@ it('shows a dash for a registered but unscheduled check', function () {
     expect($exit)->toBe(0)
         ->and(Artisan::output())->toContain('—');
 });
+
+it('labels a check that only ever ran on demand', function () {
+    Health::check(ExampleHealthCheck::class);
+
+    Health::for(Team::create())->run(ExampleHealthCheck::class);
+
+    Artisan::call('alerts:list');
+
+    expect(Artisan::output())->toContain('on demand');
+});
+
+it('prefers the scheduled row over an on-demand one for the frequency', function () {
+    Health::check(ExampleHealthCheck::class);
+
+    Health::for(Team::create())->run(ExampleHealthCheck::class);
+    Team::create()->monitorCheck(ExampleHealthCheck::class)->hourly()->save();
+
+    Artisan::call('alerts:list');
+
+    expect(Artisan::output())->toContain('Every Hour')
+        ->not->toContain('on demand');
+});

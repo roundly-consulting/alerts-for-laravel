@@ -17,7 +17,9 @@ return new class extends Migration
             $table->id();
             $table->morphKey('notifiable', $keyType, nullable: false);
             $table->string('health_check');
-            $table->string('frequency');
+            // NULL = an on-demand row seeded by "run now": it keeps counters, history and
+            // alerts for that owner + check, but the scheduler never queues it.
+            $table->string('frequency')->nullable();
             $table->unsignedSmallInteger('max_attempts')->default(1);
             $table->unsignedSmallInteger('decay_minutes')->default(1);
             $table->unsignedInteger('consecutive_failures')->default(0);

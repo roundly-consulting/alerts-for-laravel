@@ -255,6 +255,7 @@ class HealthManager
         return HealthCheckModel::query()
             ->where('notifiable_type', $notifiable->getMorphClass())
             ->where('notifiable_id', $notifiable->getKey())
+            ->whereNotNull('frequency')
             ->oldest('id')
             ->get();
     }

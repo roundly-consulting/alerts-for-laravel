@@ -37,3 +37,30 @@ it('runs a given row of the notifiable and refuses another\'s', function (): voi
 
     $action->execute(Team::create(), $row);
 })->throws(InvalidHealthCheck::class);
+
+it('never turns a run-now into a scheduled every-minute monitor', function (): void {
+    Health::check(ExampleHealthCheck::class);
+    $team = Team::create();
+
+    Health::for($team)->run(ExampleHealthCheck::class);
+
+    $row = HealthCheck::sole();
+
+    expect($row->frequency)->toBeNull()
+        ->and($row->isScheduled())->toBeFalse()
+        ->and($row->isDue())->toBeFalse()
+        ->and(Health::runDue())->toBe(0)
+        ->and(Health::for($team)->monitors())->toHaveCount(0);
+});
+
+it('runs a check now through the owner\'s scheduled row when one exists', function (): void {
+    Health::check(ExampleHealthCheck::class);
+    $team = Team::create();
+    $scheduled = Health::for($team)->monitor(ExampleHealthCheck::class)->hourly()->save();
+
+    Health::for($team)->run(ExampleHealthCheck::class);
+
+    expect(HealthCheck::sole()->is($scheduled))->toBeTrue()
+        ->and($scheduled->runs()->count())->toBe(1)
+        ->and($scheduled->refresh()->frequency)->toBe('@hourly');
+});
