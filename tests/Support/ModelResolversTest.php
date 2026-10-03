@@ -70,10 +70,14 @@ it('honours a host subclass', function (string $key, string $resolver, string $p
         ->and($resolver::query()->getModel())->toBeInstanceOf($custom);
 })->with('model seams');
 
-it('falls back to the packaged model for a model that is not ours', function (string $key, string $resolver, string $packaged): void {
+it('refuses a foreign model instead of falling back to the packaged one', function (string $key, string $resolver, string $packaged): void {
+    // The toolkit refuses any class that is not the packaged model or a subclass of it.
     config()->set($key, StrangerModel::class);
 
-    expect($resolver::class())->toBe($packaged);
+    expect(fn (): string => $resolver::class())->toThrow(
+        InvalidConfigurationException::class,
+        "Configuration value [{$key}] must be a class-string of [{$packaged}], [".StrangerModel::class.'] given.',
+    );
 })->with('model seams');
 
 it('throws when the configured class is not a model', function (string $key, string $resolver): void {

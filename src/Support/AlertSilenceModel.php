@@ -12,19 +12,16 @@ use RoundlyConsulting\PackageToolkit\Support\ModelResolver;
  * Resolves the Eloquent model persisting maintenance windows from
  * `alerts.silence-model`.
  *
- * The toolkit ModelResolver validates that the configured value is a real Eloquent
- * model; it cannot know it is *ours*, so anything that is not an AlertSilence (and
- * so cannot answer the `matching()` / `active()` scopes the mute gate queries
- * through) falls back to the packaged model.
+ * Absent config resolves the packaged model; anything else must be that model or a subclass of
+ * it, or the toolkit's ModelResolver throws InvalidConfigurationException naming the key — a
+ * foreign class is never silently replaced.
  */
 final class AlertSilenceModel
 {
     /** @return class-string<AlertSilence> */
     public static function class(): string
     {
-        $model = ModelResolver::for('alerts.silence-model', AlertSilence::class);
-
-        return is_a($model, AlertSilence::class, true) ? $model : AlertSilence::class;
+        return ModelResolver::for('alerts.silence-model', AlertSilence::class);
     }
 
     public static function new(): AlertSilence

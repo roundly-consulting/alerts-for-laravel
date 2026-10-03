@@ -11,19 +11,16 @@ use RoundlyConsulting\PackageToolkit\Support\ModelResolver;
 /**
  * Resolves the Eloquent model recording run history from `alerts.history.model`.
  *
- * The toolkit ModelResolver validates that the configured value is a real Eloquent
- * model; it cannot know it is *ours*, so anything that is not a HealthCheckRun (and
- * so cannot answer the status/latency reads uptime and p95 are built from) falls
- * back to the packaged model.
+ * Absent config resolves the packaged model; anything else must be that model or a subclass of
+ * it, or the toolkit's ModelResolver throws InvalidConfigurationException naming the key — a
+ * foreign class is never silently replaced.
  */
 final class HealthCheckRunModel
 {
     /** @return class-string<HealthCheckRun> */
     public static function class(): string
     {
-        $model = ModelResolver::for('alerts.history.model', HealthCheckRun::class);
-
-        return is_a($model, HealthCheckRun::class, true) ? $model : HealthCheckRun::class;
+        return ModelResolver::for('alerts.history.model', HealthCheckRun::class);
     }
 
     public static function new(): HealthCheckRun
