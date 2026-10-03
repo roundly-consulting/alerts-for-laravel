@@ -200,9 +200,14 @@ class HealthCheck extends Model
 
     public function dispatchHealthCheckJob(): void
     {
-        /** @var class-string<HealthCheckJob> $job */
-        $job = config('alerts.job', HealthCheckJob::class);
+        $job = config('alerts.job');
 
+        // Not set — absent, null or blank — runs the packaged job.
+        if ($job === null || (is_string($job) && trim($job) === '')) {
+            $job = HealthCheckJob::class;
+        }
+
+        /** @var class-string<HealthCheckJob> $job */
         $job::dispatch($this);
     }
 

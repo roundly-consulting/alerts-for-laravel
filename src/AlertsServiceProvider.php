@@ -104,11 +104,12 @@ final class AlertsServiceProvider extends PackageServiceProvider
 
     /**
      * The endpoint is unauthenticated by design, so hosts routinely move it to an
-     * obscure path — presence only, never the URI.
+     * obscure path — presence only, never the URI. A blank URI is not set, so it is the
+     * default too.
      */
     private function healthEndpoint(): string
     {
-        return config('alerts.route.uri', 'health') === 'health' ? 'DEFAULT' : 'SET';
+        return AlertsConfig::routeUri() === 'health' ? 'DEFAULT' : 'SET';
     }
 
     private function registeredChecks(): string

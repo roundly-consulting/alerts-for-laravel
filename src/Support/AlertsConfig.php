@@ -8,9 +8,10 @@ use RoundlyConsulting\PackageToolkit\Exceptions\InvalidConfigurationException;
 use RoundlyConsulting\PackageToolkit\Support\Config;
 
 /**
- * Strict reads of the host's non-boolean alerts settings. An absent (null) key takes the
- * default; a present but invalid value throws {@see InvalidConfigurationException} naming
- * the key — a typo never silently becomes a different setting.
+ * Strict reads of the host's non-boolean alerts settings. A key that is not set (absent,
+ * null or blank — a host's `KEY=`) takes the default; any other invalid value throws
+ * {@see InvalidConfigurationException} naming the key — a typo never silently becomes a
+ * different setting.
  *
  * @internal
  */
@@ -65,7 +66,8 @@ final class AlertsConfig
     }
 
     /**
-     * The health endpoint URI. A blank one would serve the endpoint at the site root.
+     * The health endpoint URI. A blank one is not set and takes `health`, so it never
+     * serves the endpoint at the site root.
      */
     public static function routeUri(): string
     {
@@ -81,11 +83,11 @@ final class AlertsConfig
     {
         $value = config($key);
 
-        if ($value === null) {
+        if ($value === null || (is_string($value) && trim($value) === '')) {
             return $default;
         }
 
-        if (! is_string($value) || trim($value) === '') {
+        if (! is_string($value)) {
             throw InvalidConfigurationException::notAString($key, $value);
         }
 

@@ -14,7 +14,8 @@ use RoundlyConsulting\PackageToolkit\Exceptions\InvalidConfigurationException;
  * A typo in the host's alerts config fails loudly; it never silently degrades.
  *
  * The one that mattered: `ALERTS_HISTORY_RETENTION=five` used to be cast to 0 days, and
- * the daily prune then deleted the whole run history.
+ * the daily prune then deleted the whole run history. A blank value (a host's `KEY=`) is
+ * not set and takes the default.
  */
 function seedRunsDaysAgo(int ...$daysAgo): void
 {
@@ -36,9 +37,16 @@ it('refuses a junk retention instead of pruning all history (strict config)', fu
 })->with([
     'word' => 'five',
     'decimal' => '5.5',
-    'blank' => '',
     'bool' => true,
 ]);
+
+it('reads a blank retention as not set, keeping the 30-day default (strict config)', function (string $blank): void {
+    config()->set('alerts.history.retention_days', $blank);
+    seedRunsDaysAgo(40, 10);
+
+    expect(app(PruneHealthCheckRunsAction::class)->execute())->toBe(1)
+        ->and(HealthCheckRun::count())->toBe(1);
+})->with(['empty' => '', 'whitespace' => '  ']);
 
 it('refuses a retention below one day (strict config)', function (mixed $days): void {
     config()->set('alerts.history.retention_days', $days);
@@ -78,39 +86,36 @@ it('refuses an unknown schedule frequency instead of running every minute (stric
     'typo' => 'everyMinuet',
     'not a frequency method' => 'withoutOverlapping',
     'sub-minute' => 'everyTenSeconds',
-    'blank' => '',
     'array' => [['hourly']],
 ]);
 
-it('schedules every minute when the frequency is absent (strict config)', function (): void {
-    config()->set('alerts.schedule.frequency', null);
+it('schedules every minute when the frequency is absent or blank (strict config)', function (?string $unset): void {
+    config()->set('alerts.schedule.frequency', $unset);
 
     $schedule = new Schedule;
     (new AlertsServiceProvider(app()))->scheduleCommand($schedule);
 
     expect($schedule->events()[0]->expression)->toBe('* * * * *');
-});
+})->with(['absent' => null, 'empty' => '', 'whitespace' => ' ']);
 
-it('refuses a blank or non-string health route uri or name (strict config)', function (string $key, mixed $value): void {
+it('refuses a non-string health route uri or name (strict config)', function (string $key, mixed $value): void {
     config()->set($key, $value);
 
     expect(fn () => Health::routes())->toThrow(InvalidConfigurationException::class, $key);
 })->with([
-    'blank uri would serve the site root' => ['alerts.route.uri', ''],
     'array uri' => ['alerts.route.uri', ['health']],
-    'blank name' => ['alerts.route.name', '  '],
     'int name' => ['alerts.route.name', 5],
 ]);
 
-it('uses the default route uri and name when absent (strict config)', function (): void {
-    config()->set('alerts.route.uri', null);
-    config()->set('alerts.route.name', null);
+it('uses the default route uri and name when absent or blank, never the site root (strict config)', function (?string $unset): void {
+    config()->set('alerts.route.uri', $unset);
+    config()->set('alerts.route.name', $unset);
 
     $route = Health::routes();
 
     expect($route->uri())->toBe('health')
         ->and($route->getName())->toBe('alerts.health');
-});
+})->with(['absent' => null, 'empty' => '', 'whitespace' => '  ']);
 
 it('renders the validated retention and frequency in about (strict config)', function (): void {
     config()->set('alerts.history.retention_days', '14');

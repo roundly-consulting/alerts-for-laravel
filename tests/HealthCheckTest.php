@@ -97,6 +97,20 @@ it('checks whether health check is due to run', function () {
     expect($healthCheck->isDue())->toBeFalse();
 });
 
+it('dispatches the packaged job when the configured job is not set', function (?string $unset): void {
+    config()->set('alerts.job', $unset);
+
+    $healthCheck = createHealthCheckWithNotifiable(
+        frequency: '@hourly',
+    );
+
+    Queue::fake([HealthCheckJob::class]);
+
+    $healthCheck->dispatchHealthCheckJob();
+
+    Queue::assertPushed(HealthCheckJob::class);
+})->with(['absent' => null, 'empty' => '', 'whitespace' => '  ']);
+
 it('dispatches health check job to queue', function () {
     $healthCheck = createHealthCheckWithNotifiable(
         frequency: '@hourly',

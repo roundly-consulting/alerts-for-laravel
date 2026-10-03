@@ -25,9 +25,9 @@ declare(strict_types=1);
  */
 it('ships exactly the config keys it reads', function (): void {
     expect(__DIR__.'/../../config/alerts.php')->toSatisfyConfigContract([__DIR__.'/../../src', __DIR__.'/../../database'], [
-        // `alerts.route.name` is read through Support\AlertsConfig's own non-empty-string
-        // reader, which takes the key as a literal argument the scraper does not follow into
-        // the reader.
+        // `alerts.route.name` and `alerts.route.uri` are read through Support\AlertsConfig's
+        // own string reader, which takes the key as a literal argument the scraper does not
+        // follow into the reader.
         //
         // Named exactly rather than the blanket `'alerts.'`, and the difference is
         // load-bearing here: `extraReadPrefixes` counts ANY string literal under the prefix as
@@ -38,6 +38,7 @@ it('ships exactly the config keys it reads', function (): void {
         // config key at all.
         'extraReadPrefixes' => [
             'alerts.route.name',
+            'alerts.route.uri',
         ],
 
         // Deliberately NO `excludeFromReverse` for the provider. The testing README's own

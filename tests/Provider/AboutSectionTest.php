@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Facades\Artisan;
 use RoundlyConsulting\Alerts\Checks\DatabaseCheck;
 
 /**
@@ -52,6 +53,14 @@ it('renders the alerts section without leaking the host topology it monitors', f
             'SET',
         ],
     );
+});
+
+it('reports a blank health endpoint uri as the default (strict config)', function (): void {
+    config()->set('alerts.route.uri', '');
+
+    Artisan::call('about', ['--only' => 'alerts']);
+
+    expect(Artisan::output())->toMatch('/Health endpoint[ .]*DEFAULT/');
 });
 
 /**
