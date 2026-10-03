@@ -122,7 +122,7 @@ return [
 | `health-check` | `class-string` | `RoundlyConsulting\Alerts\HealthCheck` | — | Model that schedules checks. |
 | `alert` | `class-string` | `RoundlyConsulting\Alerts\Alert` | — | Model that records alerts. |
 | `job` | `class-string` | `RoundlyConsulting\Alerts\Jobs\HealthCheckJob` | — | Job that runs a due check. |
-| `key_type` | `string` | `bigint` | `ALERTS_KEY_TYPE` | Key type of the `notifiable_id` columns on `health_checks`, `alerts` and `alert_silences`: `bigint`, `uuid` or `ulid` (anything else falls back to `bigint`). The migrations read it, so set it **before** `php artisan migrate`. All your notifiables must share one key type. |
+| `key_type` | `string` | `bigint` | `ALERTS_KEY_TYPE` | Key type of the `notifiable_id` columns on `health_checks`, `alerts` and `alert_silences`: `bigint`, `uuid` or `ulid` (case-insensitive; anything else throws `InvalidConfigurationException`). The migrations read it, so set it **before** `php artisan migrate`. All your notifiables must share one key type. |
 | `checks` | `array` | `[]` | — | Check classes/instances registered on boot. |
 | `schedule.enabled` | `bool` | `true` | `ALERTS_SCHEDULE` | Auto-register the perform command on the scheduler. Pruning (below) is scheduled either way. |
 | `schedule.frequency` | `string` | `everyMinute` | `ALERTS_SCHEDULE_FREQUENCY` | Scheduler method used (`everyMinute`, `everyFiveMinutes`, `hourly`, …). |
