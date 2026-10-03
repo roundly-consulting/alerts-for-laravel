@@ -17,6 +17,7 @@ use RoundlyConsulting\Alerts\Tests\HealthChecks\ExampleHealthCheck;
 use RoundlyConsulting\Alerts\Tests\HealthChecks\ExampleNotification;
 use RoundlyConsulting\Alerts\Tests\Models\Team;
 use RoundlyConsulting\Alerts\Tests\Models\User;
+use RoundlyConsulting\PackageToolkit\Exceptions\InvalidConfigurationException;
 
 beforeEach(function () {
     ExampleHealthCheck::$status = Status::Failed;
@@ -209,3 +210,12 @@ it('reads the switches from env-style strings', function (string $value, bool $o
     'false' => ['false', false],
     'off' => ['off', false],
 ]);
+
+it('throws on a switch typo instead of reading it as the default (strict config)', function (string $key) {
+    config()->set($key, 'disabled');
+
+    $healthCheck = mutedHealthCheck(Team::create());
+
+    expect(fn () => app(RunHealthCheckAction::class)->execute($healthCheck->fresh()))
+        ->toThrow(InvalidConfigurationException::class, "Configuration value [{$key}] must be a boolean (true/false, 1/0, on/off or yes/no), [disabled] given.");
+})->with(['alerts.silence', 'alerts.history.enabled']);
