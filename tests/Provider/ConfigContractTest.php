@@ -25,32 +25,18 @@ declare(strict_types=1);
  */
 it('ships exactly the config keys it reads', function (): void {
     expect(__DIR__.'/../../config/alerts.php')->toSatisfyConfigContract([__DIR__.'/../../src', __DIR__.'/../../database'], [
-        // The four model keys are read through the toolkit's `ModelResolver::for('alerts.…')`
-        // seam rather than a `config()` call. They are real reads — they drive the whole
-        // swap — but they are not `config(` tokens, so a prefix is what makes them visible
-        // to the scraper.
+        // `alerts.route.name` is read through Support\AlertsConfig's own non-empty-string
+        // reader, which takes the key as a literal argument the scraper does not follow into
+        // the reader.
         //
-        // The four keys are named exactly rather than using the blanket `'alerts.'` the
-        // playbook suggests, and the difference is load-bearing here: `extraReadPrefixes`
-        // counts ANY string literal under the prefix as a read, wherever it appears. Alerts
-        // registers its route as `->name(config('alerts.route.name', 'alerts.health'))` —
-        // a route NAME that lives in the package's own dotted namespace. Under `'alerts.'`
-        // that default value is scraped as a read of a config key `alerts.health`, which
-        // the file does not ship and never should, and the forward direction fails on a
-        // string that was never a config key at all. Naming the seams exactly reads every
-        // real seam and nothing else.
+        // Named exactly rather than the blanket `'alerts.'`, and the difference is
+        // load-bearing here: `extraReadPrefixes` counts ANY string literal under the prefix as
+        // a read, wherever it appears. The route-name DEFAULT, `'alerts.health'`, sits in the
+        // same call and in the package's own dotted namespace — under `'alerts.'` it would
+        // scrape as a read of a config key `alerts.health`, which the file does not ship and
+        // never should, and the forward direction would fail on a string that was never a
+        // config key at all.
         'extraReadPrefixes' => [
-            'alerts.health-check',
-            'alerts.alert',
-            'alerts.silence-model',
-            'alerts.history.model',
-            // `alerts.key_type` is read through `KeyType::fromConfig('alerts.key_type')`
-            // in the migrations (hence `database` in the scanned dirs) — it decides the
-            // shipped morph column types, but it is not a `config(` token.
-            'alerts.key_type',
-            // Read strictly through `Support\AlertsConfig` — `Config::oneOf()` and a
-            // non-empty-string check — neither of which is a `config(` token.
-            'alerts.schedule.frequency',
             'alerts.route.name',
         ],
 
