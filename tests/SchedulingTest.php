@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Console\Scheduling\Schedule;
 use RoundlyConsulting\Alerts\AlertsServiceProvider;
+use RoundlyConsulting\PackageToolkit\Exceptions\InvalidConfigurationException;
 
 function alertCommandFrom(Schedule $schedule): ?object
 {
@@ -20,13 +21,11 @@ it('schedules the command at the configured preset frequency', function () {
     expect(alertCommandFrom($schedule)?->expression)->toBe('0 * * * *');
 });
 
-it('falls back to every minute for an unknown frequency', function () {
+it('throws for an unknown frequency instead of running every minute (strict config)', function () {
     config()->set('alerts.schedule.frequency', 'not-a-real-frequency');
 
-    $schedule = new Schedule;
-    (new AlertsServiceProvider(app()))->scheduleCommand($schedule);
-
-    expect(alertCommandFrom($schedule)?->expression)->toBe('* * * * *');
+    expect(fn () => (new AlertsServiceProvider(app()))->scheduleCommand(new Schedule))
+        ->toThrow(InvalidConfigurationException::class, 'alerts.schedule.frequency');
 });
 
 it('registers the command on resolve when enabled', function () {

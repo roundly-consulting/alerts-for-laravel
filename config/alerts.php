@@ -86,6 +86,8 @@ return [
     | command on Laravel's scheduler at the given frequency, so install-to-working
     | is a single config line. Disable it to wire the command yourself; the daily
     | `alerts:prune-runs` stays scheduled while run history is enabled.
+    | `frequency` names a scheduler method from every minute up (`everyMinute`,
+    | `everyFiveMinutes`, `hourly`, `daily`, …); an unknown name throws.
     |
     */
 
@@ -132,16 +134,17 @@ return [
     |--------------------------------------------------------------------------
     |
     | Every executed check records an immutable run (status + latency) used for
-    | uptime % and p95 latency queries. `retention_days` bounds how long runs are
-    | kept; the `alerts:prune-runs` command (auto-scheduled daily whenever history
-    | is enabled, whatever `schedule.enabled` says) deletes anything older. `model`
+    | uptime % and p95 latency queries. `retention_days` (a whole number, at least
+    | 1 — anything else throws) bounds how long runs are kept; the
+    | `alerts:prune-runs` command (auto-scheduled daily whenever history is
+    | enabled, whatever `schedule.enabled` says) deletes anything older. `model`
     | is the Eloquent model used for runs.
     |
     */
 
     'history' => [
         'enabled' => env('ALERTS_HISTORY', true),
-        'retention_days' => (int) env('ALERTS_HISTORY_RETENTION', 30),
+        'retention_days' => env('ALERTS_HISTORY_RETENTION', 30),
         'model' => HealthCheckRun::class,
     ],
 

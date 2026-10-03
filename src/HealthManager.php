@@ -27,6 +27,7 @@ use RoundlyConsulting\Alerts\Enums\Status;
 use RoundlyConsulting\Alerts\Exceptions\InvalidHealthCheck;
 use RoundlyConsulting\Alerts\Http\HealthController;
 use RoundlyConsulting\Alerts\Status\HealthReport;
+use RoundlyConsulting\Alerts\Support\AlertsConfig;
 use RoundlyConsulting\Alerts\Support\AlertSilenceModel;
 use RoundlyConsulting\Alerts\Support\HealthCheckModel;
 use RoundlyConsulting\Alerts\Support\NotifiableHealth;
@@ -164,10 +165,10 @@ class HealthManager
      */
     public function routes(?string $uri = null): Route
     {
-        $uri ??= (string) config('alerts.route.uri', 'health');
+        $uri ??= AlertsConfig::routeUri();
 
         return RouteFacade::get($uri, HealthController::class)
-            ->name((string) config('alerts.route.name', 'alerts.health'));
+            ->name(AlertsConfig::routeName());
     }
 
     /**

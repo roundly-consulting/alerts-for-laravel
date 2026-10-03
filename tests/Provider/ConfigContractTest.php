@@ -48,6 +48,10 @@ it('ships exactly the config keys it reads', function (): void {
             // in the migrations (hence `database` in the scanned dirs) — it decides the
             // shipped morph column types, but it is not a `config(` token.
             'alerts.key_type',
+            // Read strictly through `Support\AlertsConfig` — `Config::oneOf()` and a
+            // non-empty-string check — neither of which is a `config(` token.
+            'alerts.schedule.frequency',
+            'alerts.route.name',
         ],
 
         // Deliberately NO `excludeFromReverse` for the provider. The testing README's own

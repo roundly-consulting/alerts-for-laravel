@@ -6,6 +6,7 @@ namespace RoundlyConsulting\Alerts\Commands;
 
 use Illuminate\Console\Command;
 use RoundlyConsulting\Alerts\HealthManager;
+use RoundlyConsulting\Alerts\Support\AlertsConfig;
 
 final class PruneRuns extends Command
 {
@@ -20,7 +21,7 @@ final class PruneRuns extends Command
 
         $deleted = $health->prune($days);
 
-        $days ??= (int) config('alerts.history.retention_days', 30);
+        $days ??= AlertsConfig::retentionDays();
 
         $this->info("Pruned {$deleted} health check run(s) older than {$days} day(s).");
 

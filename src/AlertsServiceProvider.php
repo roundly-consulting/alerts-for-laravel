@@ -11,6 +11,7 @@ use RoundlyConsulting\Alerts\Commands\PerformHealthChecks;
 use RoundlyConsulting\Alerts\Commands\PruneRuns;
 use RoundlyConsulting\Alerts\Commands\RunCheck;
 use RoundlyConsulting\Alerts\Support\AlertModel;
+use RoundlyConsulting\Alerts\Support\AlertsConfig;
 use RoundlyConsulting\Alerts\Support\AlertSilenceModel;
 use RoundlyConsulting\Alerts\Support\HealthCheckModel;
 use RoundlyConsulting\Alerts\Support\HealthCheckRunModel;
@@ -61,15 +62,9 @@ final class AlertsServiceProvider extends PackageServiceProvider
 
     public function scheduleCommand(Schedule $schedule): void
     {
-        $frequency = (string) config('alerts.schedule.frequency', 'everyMinute');
+        $frequency = AlertsConfig::scheduleFrequency();
 
-        $event = $schedule->command('alerts:perform-health-checks')->withoutOverlapping();
-
-        if (method_exists($event, $frequency)) {
-            $event->{$frequency}();
-        } else {
-            $event->everyMinute();
-        }
+        $schedule->command('alerts:perform-health-checks')->withoutOverlapping()->{$frequency}();
     }
 
     /**
@@ -131,7 +126,7 @@ final class AlertsServiceProvider extends PackageServiceProvider
             return 'OFF';
         }
 
-        return sprintf('ON (%s)', (string) config('alerts.schedule.frequency', 'everyMinute'));
+        return sprintf('ON (%s)', AlertsConfig::scheduleFrequency());
     }
 
     private function history(): string
@@ -140,7 +135,7 @@ final class AlertsServiceProvider extends PackageServiceProvider
             return 'OFF';
         }
 
-        return sprintf('ON (%d day retention)', (int) config('alerts.history.retention_days', 30));
+        return sprintf('ON (%d day retention)', AlertsConfig::retentionDays());
     }
 
     private function defaultEscalation(): string
