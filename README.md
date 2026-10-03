@@ -106,7 +106,7 @@ return [
     // Run history + latency tracking, retention, and the run model.
     'history' => [
         'enabled' => env('ALERTS_HISTORY', true),
-        'retention_days' => (int) env('ALERTS_HISTORY_RETENTION', 30),
+        'retention_days' => env('ALERTS_HISTORY_RETENTION', 30),
         'model' => \RoundlyConsulting\Alerts\HealthCheckRun::class,
     ],
 
@@ -125,18 +125,21 @@ return [
 | `key_type` | `string` | `bigint` | `ALERTS_KEY_TYPE` | Key type of the `notifiable_id` columns on `health_checks`, `alerts` and `alert_silences`: `bigint`, `uuid` or `ulid` (case-insensitive; anything else throws `InvalidConfigurationException`). The migrations read it, so set it **before** `php artisan migrate`. All your notifiables must share one key type. |
 | `checks` | `array` | `[]` | — | Check classes/instances registered on boot. |
 | `schedule.enabled` | `bool` | `true` | `ALERTS_SCHEDULE` | Auto-register the perform command on the scheduler. Pruning (below) is scheduled either way. |
-| `schedule.frequency` | `string` | `everyMinute` | `ALERTS_SCHEDULE_FREQUENCY` | Scheduler method used (`everyMinute`, `everyFiveMinutes`, `hourly`, …). |
-| `route.uri` | `string` | `health` | `ALERTS_ROUTE_URI` | URI for the opt-in JSON status endpoint. |
-| `route.name` | `string` | `alerts.health` | — | Route name for the status endpoint. |
+| `schedule.frequency` | `string` | `everyMinute` | `ALERTS_SCHEDULE_FREQUENCY` | Scheduler method used: `everyMinute`, `everyTwoMinutes`, `everyThreeMinutes`, `everyFourMinutes`, `everyFiveMinutes`, `everyTenMinutes`, `everyFifteenMinutes`, `everyThirtyMinutes`, `hourly`, `everyOddHour`, `everyTwoHours`, `everyThreeHours`, `everyFourHours`, `everySixHours`, `daily`, `twiceDaily`, `weekly`, `monthly`, `quarterly` or `yearly`. Any other name throws when the scheduler is resolved. |
+| `route.uri` | `string` | `health` | `ALERTS_ROUTE_URI` | URI for the opt-in JSON status endpoint. A blank or non-string value throws (a blank URI would serve the endpoint at the site root). |
+| `route.name` | `string` | `alerts.health` | — | Route name for the status endpoint. A blank or non-string value throws. |
 | `silence` | `bool` | `true` | `ALERTS_SILENCE` | Master switch for maintenance-window muting. |
 | `silence-model` | `class-string` | `RoundlyConsulting\Alerts\AlertSilence` | — | Model used to persist mute records. |
 | `history.enabled` | `bool` | `true` | `ALERTS_HISTORY` | Record every run (status + latency) and auto-schedule `alerts:prune-runs` daily (also when `schedule.enabled` is off). |
-| `history.retention_days` | `int` | `30` | `ALERTS_HISTORY_RETENTION` | How long runs are kept before `alerts:prune-runs` deletes them. |
+| `history.retention_days` | `int` | `30` | `ALERTS_HISTORY_RETENTION` | How long runs are kept before `alerts:prune-runs` deletes them. Must be a whole number of at least `1`; anything else (`five`, `5.5`, `0`) throws instead of pruning, so a typo can never wipe the run history. |
 | `history.model` | `class-string` | `RoundlyConsulting\Alerts\HealthCheckRun` | — | Model used to record runs. |
 | `escalation` | `array` | `[]` | — | Global default escalation policy (threshold ⇒ group), applied to any check that declares none of its own. |
 
 The switches (`schedule.enabled`, `silence`, `history.enabled`) accept booleans and the usual env
 strings: `1`/`true`/`on`/`yes` and `0`/`false`/`off`/`no`.
+
+Every non-boolean setting is read strictly too: an absent key takes its default, and a present but
+invalid value throws `InvalidConfigurationException` naming the key. Nothing falls back silently.
 
 Every model key above may point at your own subclass of the packaged model — the package
 resolves each one through a single seam, so a swapped model is honoured everywhere (relations,
