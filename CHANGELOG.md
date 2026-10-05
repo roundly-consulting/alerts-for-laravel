@@ -59,6 +59,11 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
   checks' `catch (Throwable)` used to turn it into "unreachable" without `timed_out_after`, and a
   check that caught it and retried could overrun its budget and still report `ok`. A check that
   catches the timeout now fails with the timeout message and `timed_out_after` in its meta.
+- `alerts:prune-runs --days=0` (or a negative value) no longer deletes the whole run history:
+  `--days` must be a whole number of at least 1 — anything else (`0`, `-1`, `abc`, `1.5`) fails
+  the command and deletes nothing, where `abc` used to fall back to the configured retention.
+  `Health::prune()` (real and fake) throws the new `InvalidRetention` exception below 1 day,
+  the same floor `alerts.history.retention_days` has.
 
 ## 1.0.1 - 2026-10-04
 

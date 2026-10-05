@@ -79,3 +79,17 @@ it('schedules pruning even when the perform command is wired by hand', function 
     expect(bootedScheduleCommands())->toContain('alerts:prune-runs')
         ->not->toContain('alerts:perform-health-checks');
 });
+
+it('refuses a retention that is not a whole number of at least one day and deletes nothing', function (string $days) {
+    $healthCheck = createHealthCheckWithNotifiable(Team::create());
+
+    foreach ([now()->subMinute(), now()->subDays(2), now()->subDays(40)] as $ranAt) {
+        HealthCheckRun::factory()->create(['health_check_id' => $healthCheck->getKey(), 'ran_at' => $ranAt]);
+    }
+
+    $this->artisan('alerts:prune-runs', ['--days' => $days])
+        ->expectsOutputToContain('--days must be a whole number of days, at least 1')
+        ->assertFailed();
+
+    expect(HealthCheckRun::count())->toBe(3);
+})->with(['zero' => '0', 'negative' => '-1', 'word' => 'abc', 'decimal' => '1.5']);

@@ -448,3 +448,11 @@ it('keeps an open alert in step with a failure below the gate', function (): voi
     expect(Health::for($team)->report()->checks()[0]->status)->toBe(Status::Warning)
         ->and(Health::for($team)->report()->checks()[0]->message)->toBe('warning');
 });
+
+it('refuses a prune below one day under the fake too, recording nothing', function (): void {
+    $fake = Health::fake();
+
+    expect(fn () => Health::prune(0))->toThrow(RoundlyConsulting\Alerts\Exceptions\InvalidRetention::class);
+
+    $fake->assertNothingPruned();
+});

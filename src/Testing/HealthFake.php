@@ -15,6 +15,7 @@ use RoundlyConsulting\Alerts\CheckResult;
 use RoundlyConsulting\Alerts\Checks\ClosureCheck;
 use RoundlyConsulting\Alerts\DataTransferObjects\ScheduleHealthCheckData;
 use RoundlyConsulting\Alerts\Exceptions\InvalidHealthCheck;
+use RoundlyConsulting\Alerts\Exceptions\InvalidRetention;
 use RoundlyConsulting\Alerts\HealthCheck;
 use RoundlyConsulting\Alerts\HealthManager;
 use RoundlyConsulting\Alerts\Status\HealthReport;
@@ -268,6 +269,11 @@ final class HealthFake extends HealthManager
 
     public function prune(?int $days = null): int
     {
+        // Refused before it is recorded, as the real action refuses it before deleting.
+        if ($days !== null && $days < 1) {
+            throw InvalidRetention::days($days);
+        }
+
         $this->pruned[] = $days;
 
         return 0;

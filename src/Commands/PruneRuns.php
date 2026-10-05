@@ -17,7 +17,17 @@ final class PruneRuns extends Command
     public function handle(HealthManager $health): int
     {
         $days = $this->option('days');
-        $days = is_numeric($days) ? (int) $days : null;
+
+        if ($days === null || $days === '') {
+            $days = null;
+        } elseif ((is_int($days) || (is_string($days) && ctype_digit($days))) && (int) $days >= 1) {
+            $days = (int) $days;
+        } else {
+            // A typo must never widen the prune: `--days=0` used to delete the whole history.
+            $this->error('--days must be a whole number of days, at least 1.');
+
+            return self::FAILURE;
+        }
 
         $deleted = $health->prune($days);
 
