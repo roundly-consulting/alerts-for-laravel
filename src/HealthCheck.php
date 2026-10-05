@@ -142,13 +142,23 @@ class HealthCheck extends Model
         return $this->frequency !== null;
     }
 
-    public function isDue(): bool
+    /**
+     * Whether the cron is due now — or, given the previous scheduler tick, at any minute
+     * after it up to now, so a scheduler that ticks less often than every minute never
+     * steps over a check's minute.
+     */
+    public function isDue(?CarbonInterface $since = null): bool
     {
         if ($this->frequency === null) {
             return false;
         }
 
-        return (new CronSchedule($this->frequency))->isDue(now());
+        $cron = new CronSchedule($this->frequency);
+        $now = now();
+
+        return $since === null
+            ? $cron->isDue($now)
+            : $cron->isDueBetween($since, $now);
     }
 
     public function latestRun(): ?HealthCheckRun

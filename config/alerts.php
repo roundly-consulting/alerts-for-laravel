@@ -87,7 +87,9 @@ return [
     | is a single config line. Disable it to wire the command yourself; the daily
     | `alerts:prune-runs` stays scheduled while run history is enabled.
     | `frequency` names a scheduler method from every minute up (`everyMinute`,
-    | `everyFiveMinutes`, `hourly`, `daily`, …); an unknown name throws.
+    | `everyFiveMinutes`, `hourly`, `daily`, …); an unknown name throws. A
+    | coarser cadence still runs every check: each tick queues the checks that
+    | came due at any minute since the previous tick.
     |
     */
 

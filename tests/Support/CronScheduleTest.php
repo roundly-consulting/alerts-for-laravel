@@ -155,3 +155,17 @@ it('rejects an empty list segment instead of reading it as every value', functio
     'leading comma' => [',5 * * * *'],
     'step without a range' => ['/5 * * * *'],
 ]);
+
+it('finds a due minute anywhere in a window, skipping what cannot match', function (string $expression, string $after, string $until, bool $due) {
+    expect((new CronSchedule($expression))->isDueBetween(Carbon::parse($after), Carbon::parse($until)))->toBe($due);
+})->with([
+    'a minute inside the window' => ['7 * * * *', '2026-10-05 12:05:00', '2026-10-05 12:10:00', true],
+    'the window end is included' => ['10 * * * *', '2026-10-05 12:05:00', '2026-10-05 12:10:00', true],
+    'the window start is excluded' => ['5 * * * *', '2026-10-05 12:05:00', '2026-10-05 12:10:00', false],
+    'a later hour of the same day' => ['0 18 * * *', '2026-10-05 12:00:00', '2026-10-05 23:59:00', true],
+    'a later day' => ['0 0 * * MON', '2026-10-01 00:00:00', '2026-10-05 00:00:00', true],
+    'a later month' => ['0 0 1 JAN *', '2026-02-01 00:00:00', '2027-01-01 00:00:00', true],
+    'not yet in the month' => ['0 0 1 JAN *', '2026-02-01 00:00:00', '2026-12-31 23:59:00', false],
+    'an impossible date' => ['0 0 31 2 *', '2026-01-01 00:00:00', '2028-12-31 23:59:00', false],
+    'an empty window' => ['* * * * *', '2026-10-05 12:00:00', '2026-10-05 12:00:00', false],
+]);

@@ -23,6 +23,10 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
 - A stepped single value in a cron field (`5/15`) now steps from that value to the end of the
   field (`5,20,35,50`) instead of matching the value alone, and an empty list segment (`5,`, `,5`,
   `/5`) is rejected with `InvalidCronExpression` instead of being read as "every value".
+- A `schedule.frequency` coarser than every minute no longer starves monitors whose cron minute
+  falls between two ticks (`everyFiveMinutes` never ran `7 * * * *`, `everyOddHour` never ran
+  `@daily`): `Health::runDue()` remembers its last tick in the cache and queues every check that
+  came due since, once. `HealthCheck::isDue()` takes an optional `$since` for the same window.
 
 ## 1.0.1 - 2026-10-04
 

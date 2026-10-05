@@ -105,6 +105,33 @@ final class CronSchedule
             && $this->dayMatches($now);
     }
 
+    /**
+     * Whether the expression is due at any minute after `$after` up to and including
+     * `$until`. It skips whole months, days and hours that cannot match, so a long window
+     * costs a few hundred steps at most, never one per minute.
+     */
+    public function isDueBetween(CarbonInterface $after, CarbonInterface $until): bool
+    {
+        $at = $after->toImmutable()->startOfMinute()->addMinute();
+        $until = $until->toImmutable()->startOfMinute();
+
+        while ($at->lessThanOrEqualTo($until)) {
+            if (! in_array((int) $at->month, $this->months, true)) {
+                $at = $at->addMonthNoOverflow()->startOfMonth();
+            } elseif (! $this->dayMatches($at)) {
+                $at = $at->addDay()->startOfDay();
+            } elseif (! in_array((int) $at->hour, $this->hours, true)) {
+                $at = $at->addHour()->startOfHour();
+            } elseif (in_array((int) $at->minute, $this->minutes, true)) {
+                return true;
+            } else {
+                $at = $at->addMinute();
+            }
+        }
+
+        return false;
+    }
+
     private function dayMatches(CarbonInterface $at): bool
     {
         $dayOfMonth = in_array((int) $at->day, $this->daysOfMonth, true);
