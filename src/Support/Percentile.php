@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace RoundlyConsulting\Alerts\Support;
 
 /**
- * Tiny native percentile helper used for latency aggregation, computed in PHP so
- * uptime/latency queries behave identically across sqlite/mysql/pgsql (no DB-side
- * percentile function required).
+ * Tiny native nearest-rank percentile over a list of integers. It defines the p95 that
+ * HealthCheck::p95LatencyMs() reads in the database (one row at the nearest-rank offset,
+ * portable across MySQL, PostgreSQL and SQLite — no DB-side percentile function).
  */
 final class Percentile
 {
