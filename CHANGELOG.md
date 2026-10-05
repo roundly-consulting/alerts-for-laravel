@@ -19,6 +19,9 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
   exception text, so `message`, `tags`, `last_alert_at` and `muted` are no longer exposed by
   default; set `alerts.route.details` to `true` for the previous body. The status code and the
   top-level `status` are unchanged, and `Health::report()->toArray()` still returns everything.
+- Documentation: `Health::report()` / `status()` cover the on-demand rows `Health::for($owner)->run()`
+  creates as well as scheduled monitors — a failed on-demand run counts until a passing re-run of
+  the check clears it.
 
 ### Fixed
 

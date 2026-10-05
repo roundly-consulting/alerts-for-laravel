@@ -115,7 +115,8 @@ class HealthManager
     }
 
     /**
-     * The current report across every scheduled check, optionally narrowed by tags.
+     * The current report across every monitored check — scheduled monitors and the
+     * on-demand rows `for($owner)->run()` creates — optionally narrowed by tags.
      *
      * @param  list<string>|null  $tags
      */

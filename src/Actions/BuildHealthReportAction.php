@@ -18,8 +18,10 @@ use RoundlyConsulting\Alerts\Support\HealthCheckModel;
 use RoundlyConsulting\Alerts\Support\MonitorOptions;
 
 /**
- * Builds a current health report from the scheduled HealthCheck rows and their
- * latest open alerts, optionally scoped to a single notifiable and/or tags.
+ * Builds a current health report from the HealthCheck rows — scheduled monitors and the
+ * on-demand rows `Health::for($owner)->run()` creates — and their latest open alerts,
+ * optionally scoped to a single notifiable and/or tags. A failed on-demand run stays in
+ * the report until a passing re-run of the check closes its alert.
  */
 final readonly class BuildHealthReportAction
 {
