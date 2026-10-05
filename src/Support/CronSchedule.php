@@ -57,6 +57,12 @@ final class CronSchedule
     /** @var list<int> */
     private array $daysOfWeek;
 
+    /**
+     * Whether both day fields are restricted (neither is `*`): standard cron then runs on
+     * a day that matches EITHER of them, not only on a day that matches both.
+     */
+    private bool $eitherDay;
+
     public function __construct(string $expression)
     {
         $normalized = self::ALIASES[mb_strtolower(mb_trim($expression))] ?? $expression;
@@ -72,6 +78,7 @@ final class CronSchedule
         $this->daysOfMonth = $this->parseField($parts[2], 1, 31, $expression);
         $this->months = $this->parseField($parts[3], 1, 12, $expression, self::MONTH_NAMES);
         $this->daysOfWeek = $this->parseField($parts[4], 0, 7, $expression, self::DAY_NAMES);
+        $this->eitherDay = $parts[2] !== '*' && $parts[4] !== '*';
     }
 
     /**
@@ -92,16 +99,22 @@ final class CronSchedule
     {
         $now = $now ?? Carbon::now();
 
-        // Cron treats both 0 and 7 as Sunday; normalise the current weekday set.
-        $weekday = (int) $now->dayOfWeek;
-        $weekdayMatches = in_array($weekday, $this->daysOfWeek, true)
-            || ($weekday === 0 && in_array(7, $this->daysOfWeek, true));
-
         return in_array((int) $now->minute, $this->minutes, true)
             && in_array((int) $now->hour, $this->hours, true)
-            && in_array((int) $now->day, $this->daysOfMonth, true)
             && in_array((int) $now->month, $this->months, true)
-            && $weekdayMatches;
+            && $this->dayMatches($now);
+    }
+
+    private function dayMatches(CarbonInterface $at): bool
+    {
+        $dayOfMonth = in_array((int) $at->day, $this->daysOfMonth, true);
+
+        // Cron treats both 0 and 7 as Sunday; normalise the current weekday set.
+        $weekday = (int) $at->dayOfWeek;
+        $dayOfWeek = in_array($weekday, $this->daysOfWeek, true)
+            || ($weekday === 0 && in_array(7, $this->daysOfWeek, true));
+
+        return $this->eitherDay ? $dayOfMonth || $dayOfWeek : $dayOfMonth && $dayOfWeek;
     }
 
     /**

@@ -17,6 +17,9 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
   under that key (it used to be stored under the class-derived key and fail on every scheduled
   run), a registered check whose constructor needs arguments can be scheduled, and a class that is
   not a check throws `InvalidHealthCheck` instead of a PHP error.
+- A cron expression that restricts both the day of the month and the day of the week
+  (`0 0 1,15 * MON`) now runs on a day matching either field, as standard cron and Laravel's
+  scheduler do; it used to run only on days matching both.
 
 ## 1.0.1 - 2026-10-04
 

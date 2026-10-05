@@ -121,3 +121,16 @@ it('validates an expression and hands back its canonical form', function () {
 
     CronSchedule::validate('61 * * * *');
 })->throws(InvalidCronExpression::class);
+
+it('matches either day field when both day-of-month and day-of-week are restricted', function (string $expression, string $at, bool $due) {
+    Carbon::setTestNow($at);
+
+    expect((new CronSchedule($expression))->isDue())->toBe($due);
+})->with([
+    'weekday match off the listed days' => ['0 0 1,15 * MON', '2026-10-05 00:00:00', true],
+    'listed day off the weekday' => ['0 0 1,15 * MON', '2026-10-01 00:00:00', true],
+    'neither day field matches' => ['0 0 1,15 * MON', '2026-10-06 00:00:00', false],
+    'single day-of-month or monday' => ['0 0 1 * MON', '2026-10-01 00:00:00', true],
+    'unrestricted day-of-month keeps the weekday filter' => ['0 0 * * MON', '2026-10-01 00:00:00', false],
+    'unrestricted day-of-week keeps the day filter' => ['0 0 15 * *', '2026-10-05 00:00:00', false],
+]);
