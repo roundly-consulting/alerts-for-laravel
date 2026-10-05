@@ -25,6 +25,13 @@ final class HealthCheckJob implements ShouldQueue
 
     public function handle(RunHealthCheckAction $action): void
     {
+        // Unmonitored after this job was queued. SerializesModels restores the row without
+        // the soft-delete scope, so it comes back trashed rather than missing — and a run
+        // would record history, open an alert and notify for a check nobody monitors.
+        if ($this->healthCheck->trashed()) {
+            return;
+        }
+
         $action->execute($this->healthCheck);
     }
 }

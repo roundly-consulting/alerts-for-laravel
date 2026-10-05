@@ -123,3 +123,25 @@ it('captures recovery timestamp of failed health check', function () {
     Event::assertDispatched(HealthCheckFailed::class);
     Event::assertDispatched(HealthCheckRecovered::class);
 });
+
+it('skips a row that was unmonitored after the job was queued', function () {
+    ExampleHealthCheck::$ok = false;
+    Notification::fake();
+
+    $team = Team::create();
+    $user = User::create(['email' => 'john@doe.com']);
+    $healthCheck = createHealthCheckWithNotifiable($team);
+
+    // Queued while monitored, restored by SerializesModels after unmonitor() — which
+    // restores without the soft-delete scope, so the row comes back trashed.
+    $payload = serialize(new HealthCheckJob($healthCheck));
+    RoundlyConsulting\Alerts\Facades\Health::for($team)->unmonitor('example_health_check');
+
+    $job = unserialize($payload);
+    $this->app->call([$job, 'handle']);
+
+    expect($job->healthCheck->trashed())->toBeTrue()
+        ->and($healthCheck->runs()->count())->toBe(0);
+    $this->assertDatabaseEmpty('alerts');
+    Notification::assertNothingSent();
+});

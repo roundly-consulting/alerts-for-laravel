@@ -64,6 +64,10 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
   the command and deletes nothing, where `abc` used to fall back to the configured retention.
   `Health::prune()` (real and fake) throws the new `InvalidRetention` exception below 1 day,
   the same floor `alerts.history.retention_days` has.
+- A `HealthCheckJob` queued before its row was unmonitored no longer runs it — the soft-deleted
+  row used to record a run, open an alert and notify. `unmonitor()` now also closes any alert
+  still open on the rows it removes (`recovered_at` set, no `HealthCheckRecovered` event), which
+  used to stay open forever.
 
 ## 1.0.1 - 2026-10-04
 
