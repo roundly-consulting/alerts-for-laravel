@@ -24,9 +24,10 @@ return new class extends Migration
             $table->timestamp('triggered_at');
             $table->timestamp('recovered_at')->nullable();
             // 1 while this is the check's open alert, NULL once it recovers. NULLs never
-            // collide in a unique index, so the index below admits any number of closed
-            // alerts but only ONE open alert per scheduled check, on every engine — two
-            // overlapping failing runs cannot both open one.
+            // collide in a unique index on MySQL and PostgreSQL (and SQLite), so the index
+            // below admits any number of closed alerts but only ONE open alert per scheduled
+            // check — two overlapping failing runs cannot both open one. SQL Server treats
+            // NULLs as equal here and is not a supported database.
             $table->unsignedTinyInteger('open_slot')->nullable();
             $table->timestamps();
             $table->softDeletes();

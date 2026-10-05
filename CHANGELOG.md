@@ -22,6 +22,8 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
 - Documentation: `Health::report()` / `status()` cover the on-demand rows `Health::for($owner)->run()`
   creates as well as scheduled monitors — a failed on-demand run counts until a passing re-run of
   the check clears it.
+- Documentation: the supported databases are MySQL and PostgreSQL (SQLite for tests); SQL Server
+  is not supported — its unique index treats the NULL `open_slot` of recovered alerts as equal.
 
 ### Fixed
 
