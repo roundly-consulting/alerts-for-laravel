@@ -73,6 +73,9 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
   what was scheduled (it was always empty), a monitor that never ran is in `report()` as `ok`, and
   `unmonitor()` removes the monitors — and the on-demand one — from later runs and the report,
   returning how many it removed (it returned `0` and changed nothing).
+- `alerts:list` shows a check's worst status across the notifiables it is scheduled for (it showed
+  an arbitrary one, so one owner's failure could read `Ok`), and marks it muted only for a silence
+  that applies to every notifiable — not for one scoped to a single owner.
 
 ## 1.0.1 - 2026-10-04
 

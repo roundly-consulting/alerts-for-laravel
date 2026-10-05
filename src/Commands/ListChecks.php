@@ -5,12 +5,16 @@ declare(strict_types=1);
 namespace RoundlyConsulting\Alerts\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Collection;
 use RoundlyConsulting\Alerts\AlertSilence;
 use RoundlyConsulting\Alerts\Check;
+use RoundlyConsulting\Alerts\Enums\Status;
 use RoundlyConsulting\Alerts\HealthCheck;
 use RoundlyConsulting\Alerts\HealthManager;
 use RoundlyConsulting\Alerts\Status\CheckStatus;
+use RoundlyConsulting\Alerts\Status\HealthReport;
 use RoundlyConsulting\Alerts\Support\HealthCheckModel;
+use RoundlyConsulting\PackageToolkit\Support\Config;
 
 final class ListChecks extends Command
 {
@@ -36,10 +40,15 @@ final class ListChecks extends Command
             return self::SUCCESS;
         }
 
+        // One check is scheduled for many notifiables; its line shows the worst of them, so a
+        // failure for one owner is never hidden behind another owner's healthy row.
         $statuses = collect($health->report()->checks())
-            ->keyBy(fn (CheckStatus $status): string => $status->key);
+            ->groupBy(fn (CheckStatus $status): string => $status->key)
+            ->map(fn (Collection $group): Status => (new HealthReport(array_values($group->all())))->overall());
 
-        $rows = $checks->map(function (Check $check) use ($health, $statuses, $tag): array {
+        $silenced = $this->globalSilences($health);
+
+        $rows = $checks->map(function (Check $check) use ($statuses, $silenced, $tag): array {
             $row = $this->scheduledRow($check->key(), $tag);
             $status = $statuses->get($check->key());
 
@@ -48,8 +57,8 @@ final class ListChecks extends Command
                 $check->name(),
                 $row === null ? '—' : $this->frequencyLabel($check, $row->frequency),
                 $row?->latestRun()?->ran_at?->toDateTimeString() ?? '—',
-                $status?->status->label() ?? '—',
-                $this->isMuted($health, $check, $row) ? 'yes' : 'no',
+                $status?->label() ?? '—',
+                $this->isMuted($silenced, $check, $row) ? 'yes' : 'no',
                 $this->tagList($check, $row),
             ];
         })->all();
@@ -95,18 +104,32 @@ final class ListChecks extends Command
     }
 
     /**
-     * Muted the way the run pipeline decides it: a silence on the key, on any of the
-     * check's (or its row's) tags, or the global '*'.
+     * The keys of the active silences that apply to every notifiable. One scoped to a
+     * single notifiable mutes that owner's runs only, so it never marks the whole check.
+     *
+     * @return list<string>
      */
-    private function isMuted(HealthManager $health, Check $check, ?HealthCheck $row): bool
+    private function globalSilences(HealthManager $health): array
     {
-        foreach ([$check->key(), ...$this->tags($check, $row), AlertSilence::GLOBAL_KEY] as $key) {
-            if ($health->silences()->isMuted($key)) {
-                return true;
-            }
+        if (! Config::boolean('alerts.silence', true)) {
+            return [];
         }
 
-        return false;
+        return array_values($health->silences()->active()
+            ->filter(fn (AlertSilence $silence): bool => $silence->notifiable_id === null)
+            ->map(fn (AlertSilence $silence): string => $silence->key)
+            ->all());
+    }
+
+    /**
+     * Muted the way the run pipeline decides it for every notifiable: a global silence on
+     * the key, on any of the check's (or its row's) tags, or the global '*'.
+     *
+     * @param  list<string>  $silenced
+     */
+    private function isMuted(array $silenced, Check $check, ?HealthCheck $row): bool
+    {
+        return array_intersect([$check->key(), ...$this->tags($check, $row), AlertSilence::GLOBAL_KEY], $silenced) !== [];
     }
 
     private function tagList(Check $check, ?HealthCheck $row): string

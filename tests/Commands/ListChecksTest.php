@@ -95,3 +95,46 @@ it('shows a check as muted by a global or tag silence, as the pipeline would', f
 
     expect(Artisan::output())->toContain('| yes ');
 })->with(['global' => '*', 'row tag' => 'db']);
+
+it('shows the worst status across the notifiables a check is scheduled for', function () {
+    Health::check(ExampleHealthCheck::class);
+    $failing = Team::create();
+    $healthy = Team::create();
+
+    Health::for($failing)->monitor(ExampleHealthCheck::class)->save();
+    ExampleHealthCheck::$ok = false;
+    Health::for($failing)->run(ExampleHealthCheck::class);
+    ExampleHealthCheck::$ok = true;
+    Health::for($healthy)->monitor(ExampleHealthCheck::class)->save();
+
+    Artisan::call('alerts:list');
+
+    expect(Artisan::output())->toContain('| Failed ')
+        ->not->toContain('| Ok ');
+});
+
+it('does not show a check as muted by a silence scoped to one notifiable', function () {
+    Health::check(ExampleHealthCheck::class);
+    $muted = Team::create();
+
+    Health::for($muted)->monitor(ExampleHealthCheck::class)->save();
+    Health::for(Team::create())->monitor(ExampleHealthCheck::class)->save();
+    Health::silences()->mute('example_health_check', for: $muted);
+
+    Artisan::call('alerts:list');
+
+    expect(Artisan::output())->toContain('| no ')
+        ->not->toContain('| yes ');
+});
+
+it('shows no check as muted while silences are switched off', function () {
+    Health::check(ExampleHealthCheck::class);
+    Team::create()->monitorCheck(ExampleHealthCheck::class)->save();
+    Health::silences()->mute('*');
+    config()->set('alerts.silence', false);
+
+    Artisan::call('alerts:list');
+
+    expect(Artisan::output())->toContain('| no ')
+        ->not->toContain('| yes ');
+});
