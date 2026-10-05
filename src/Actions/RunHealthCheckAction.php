@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Alerts\Actions;
 
+use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -23,6 +24,7 @@ use RoundlyConsulting\Alerts\Support\HealthCheckRunModel;
 use RoundlyConsulting\Alerts\Support\MonitorOptions;
 use RoundlyConsulting\Alerts\Support\SafeCheck;
 use RoundlyConsulting\PackageToolkit\Support\Config;
+use Throwable;
 
 /**
  * Runs a single scheduled health check and applies its side effects through one
@@ -42,6 +44,10 @@ use RoundlyConsulting\PackageToolkit\Support\Config;
  */
 final readonly class RunHealthCheckAction
 {
+    public function __construct(
+        private ExceptionHandler $exceptions,
+    ) {}
+
     public function execute(HealthCheck $healthCheck, ?Check $check = null): CheckResult
     {
         $check = $check === null ? $healthCheck->healthCheck() : $check->withHealthCheck($healthCheck);
@@ -189,7 +195,7 @@ final readonly class RunHealthCheckAction
 
         foreach ($options->groupsBetween($fromLevel, $toLevel) as $group) {
             foreach ($healthCheck->notifiablesForGroup($group) as $notifiable) {
-                $check->notify($notifiable);
+                $this->notify($check, $notifiable);
             }
         }
     }
@@ -199,8 +205,22 @@ final readonly class RunHealthCheckAction
         $check->via($options->channelsForLevel($level, $this->defaultChannels()));
 
         $healthCheck->forEachNotifiable(
-            fn (object $notifiable) => $check->notify($notifiable),
+            fn (object $notifiable) => $this->notify($check, $notifiable),
         );
+    }
+
+    /**
+     * One recipient that cannot be notified (a bad address, a mail server that is down)
+     * is reported and skipped, never allowed to stop the recipients after it: the
+     * escalation level is already persisted, so a tier cut short here is never paged again.
+     */
+    private function notify(Check $check, object $notifiable): void
+    {
+        try {
+            $check->notify($notifiable);
+        } catch (Throwable $e) {
+            $this->exceptions->report($e);
+        }
     }
 
     private function handleRecovery(HealthCheck $healthCheck, MonitorOptions $options, bool $muted): void

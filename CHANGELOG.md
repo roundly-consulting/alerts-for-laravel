@@ -6,6 +6,12 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
 
 ## Unreleased
 
+### Fixed
+
+- A recipient whose notification throws (a bad address, a mail server that is down) is now
+  reported to the exception handler and skipped; the recipients after it are still notified, and
+  an escalated tier is no longer cut short and never paged again.
+
 ## 1.0.1 - 2026-10-04
 
 ### Changed

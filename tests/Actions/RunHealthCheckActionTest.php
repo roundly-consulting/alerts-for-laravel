@@ -2,8 +2,11 @@
 
 declare(strict_types=1);
 
+use Illuminate\Notifications\Events\NotificationSending;
+use Illuminate\Notifications\Events\NotificationSent;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Notification;
 use RoundlyConsulting\Alerts\Actions\RunHealthCheckAction;
 use RoundlyConsulting\Alerts\Enums\Status;
@@ -142,4 +145,29 @@ it('keeps an open alert in step with the latest failing result', function () {
 
     expect(Health::report()->checks()[0]->status)->toBe(Status::Warning)
         ->and(Health::report()->checks()[0]->message)->toBe('Disk 90%');
+});
+
+it('notifies every recipient of the default group even when one of them throws', function () {
+    ExampleHealthCheck::$status = Status::Failed;
+    Exceptions::fake();
+
+    $sent = [];
+    Event::listen(NotificationSending::class, function (NotificationSending $event): void {
+        if ($event->notifiable->email === 'bad@x.com') {
+            throw new RuntimeException('Mailbox unavailable');
+        }
+    });
+    Event::listen(NotificationSent::class, function (NotificationSent $event) use (&$sent): void {
+        $sent[] = $event->notifiable->email;
+    });
+
+    User::create(['email' => 'bad@x.com']);
+    User::create(['email' => 'good@x.com']);
+
+    $result = app(RunHealthCheckAction::class)->execute(createHealthCheckWithNotifiable());
+
+    expect($result->status)->toBe(Status::Failed)
+        ->and($sent)->toBe(['good@x.com']);
+
+    Exceptions::assertReported(fn (RuntimeException $e): bool => $e->getMessage() === 'Mailbox unavailable');
 });

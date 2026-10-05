@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
+use Illuminate\Notifications\Events\NotificationSending;
+use Illuminate\Notifications\Events\NotificationSent;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Notification;
 use RoundlyConsulting\Alerts\Actions\RunHealthCheckAction;
 use RoundlyConsulting\Alerts\Alert;
@@ -133,4 +136,34 @@ it('resets escalation level to zero on recovery', function () {
     app(RunHealthCheckAction::class)->execute($healthCheck);
 
     expect(Alert::first()->escalation_level)->toBe(0);
+});
+
+it('keeps paging the rest of an escalated group when one recipient throws', function () {
+    Exceptions::fake();
+
+    $sent = [];
+    Event::listen(NotificationSending::class, function (NotificationSending $event): void {
+        if ($event->notifiable->email === 'team1@x.com') {
+            throw new RuntimeException('SMTP down for team1');
+        }
+    });
+    Event::listen(NotificationSent::class, function (NotificationSent $event) use (&$sent): void {
+        $sent[] = $event->notifiable->email;
+    });
+
+    $team = GroupedTeam::create();
+    User::create(['email' => 'owner@x.com']);
+    User::create(['email' => 'team1@x.com']);
+    User::create(['email' => 'team2@x.com']);
+
+    $healthCheck = escalatingCheck($team);
+
+    foreach (range(1, 3) as $run) {
+        app(RunHealthCheckAction::class)->execute($healthCheck->fresh());
+    }
+
+    expect(Alert::first()->escalation_level)->toBe(3)
+        ->and($sent)->toBe(['owner@x.com', 'team2@x.com']);
+
+    Exceptions::assertReported(fn (RuntimeException $e): bool => $e->getMessage() === 'SMTP down for team1');
 });
