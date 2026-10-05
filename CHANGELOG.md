@@ -11,6 +11,12 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
 - A recipient whose notification throws (a bad address, a mail server that is down) is now
   reported to the exception handler and skipped; the recipients after it are still notified, and
   an escalated tier is no longer cut short and never paged again.
+- `Health::for($owner)->monitor(SomeCheck::class)`, `schedule()`, `unmonitor(SomeCheck::class)`
+  and the fake's `assertMonitored()` / `assertUnmonitored()` now resolve a check class-string
+  through the registry, as `run()` does: a check registered with `as('key')` is stored and removed
+  under that key (it used to be stored under the class-derived key and fail on every scheduled
+  run), a registered check whose constructor needs arguments can be scheduled, and a class that is
+  not a check throws `InvalidHealthCheck` instead of a PHP error.
 
 ## 1.0.1 - 2026-10-04
 

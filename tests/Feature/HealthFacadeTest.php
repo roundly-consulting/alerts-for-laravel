@@ -3,8 +3,11 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use RoundlyConsulting\Alerts\Actions\RunHealthCheckAction;
 use RoundlyConsulting\Alerts\AlertSilence;
+use RoundlyConsulting\Alerts\Checks\HttpPingCheck;
 use RoundlyConsulting\Alerts\DataTransferObjects\ScheduleHealthCheckData;
 use RoundlyConsulting\Alerts\Enums\Status;
 use RoundlyConsulting\Alerts\Exceptions\InvalidHealthCheck;
@@ -18,6 +21,7 @@ use RoundlyConsulting\Alerts\Support\PendingScheduledCheck;
 use RoundlyConsulting\Alerts\Support\Silences;
 use RoundlyConsulting\Alerts\Tests\HealthChecks\AnotherHealthCheck;
 use RoundlyConsulting\Alerts\Tests\HealthChecks\ExampleHealthCheck;
+use RoundlyConsulting\Alerts\Tests\HealthChecks\RequiredArgumentCheck;
 use RoundlyConsulting\Alerts\Tests\Models\Team;
 
 beforeEach(function (): void {
@@ -228,4 +232,54 @@ it('prunes run history with prune()', function (): void {
     expect(Health::prune(7))->toBe(1)
         ->and(Health::prune())->toBe(1)
         ->and(HealthCheckRun::count())->toBe(1);
+});
+
+it('schedules a check class-string under the key its registered instance carries', function (): void {
+    Http::fake(['*' => Http::response('ok')]);
+    Health::check(HttpPingCheck::make('https://status.example.test')->as('a_ping'));
+    $team = Team::create();
+
+    $row = Health::for($team)->monitor(HttpPingCheck::class)->save();
+
+    expect($row->health_check)->toBe('a_ping')
+        ->and(app(RunHealthCheckAction::class)->execute($row)->isOk)->toBeTrue();
+});
+
+it('unmonitors a check class-string by the key its registered instance carries', function (): void {
+    Health::check(HttpPingCheck::make('https://status.example.test')->as('a_ping'));
+    $team = Team::create();
+    $row = Health::for($team)->monitor('a_ping')->save();
+
+    expect(Health::for($team)->unmonitor(HttpPingCheck::class))->toBe(1)
+        ->and($row->fresh()?->trashed())->toBeTrue();
+});
+
+it('schedules a registered check whose constructor needs arguments', function (): void {
+    Health::check(new RequiredArgumentCheck('primary'));
+    $team = Team::create();
+
+    $row = Health::for($team)->monitor(RequiredArgumentCheck::class)->save();
+
+    expect($row->health_check)->toBe('required_argument_check')
+        ->and(Health::for($team)->unmonitor(RequiredArgumentCheck::class))->toBe(1);
+});
+
+it('resolves a check class-string through the registry under the fake too', function (): void {
+    Health::check(HttpPingCheck::make('https://status.example.test')->as('a_ping'));
+    Health::check(new RequiredArgumentCheck('primary'));
+    $fake = Health::fake();
+    $team = Team::create();
+
+    $row = Health::for($team)->monitor(HttpPingCheck::class)->save();
+    Health::for($team)->monitor(RequiredArgumentCheck::class)->save();
+    Health::for($team)->unmonitor(HttpPingCheck::class);
+    Health::for($team)->unmonitor(RequiredArgumentCheck::class);
+
+    expect($row->health_check)->toBe('a_ping');
+
+    $fake->assertMonitored('a_ping', $team);
+    $fake->assertMonitored(HttpPingCheck::class, $team);
+    $fake->assertMonitored(RequiredArgumentCheck::class, $team);
+    $fake->assertUnmonitored('a_ping', $team);
+    $fake->assertUnmonitored(RequiredArgumentCheck::class, $team);
 });

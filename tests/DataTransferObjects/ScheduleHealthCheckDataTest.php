@@ -22,6 +22,10 @@ it('rejects a class that is not a check', function () {
     (new ScheduleHealthCheckData(check: stdClass::class))->key();
 })->throws(InvalidHealthCheck::class);
 
+it('rejects an abstract class that is not a check', function () {
+    (new ScheduleHealthCheckData(check: Illuminate\Database\Eloquent\Model::class))->key();
+})->throws(InvalidHealthCheck::class, 'does not extend base check class');
+
 it('resolves preset frequencies to cron', function () {
     $data = new ScheduleHealthCheckData(check: 'k', frequency: 'hourly');
 

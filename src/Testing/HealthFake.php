@@ -178,12 +178,7 @@ final class HealthFake extends HealthManager
             throw InvalidHealthCheck::notScheduledFor($check, $notifiable);
         }
 
-        $key = match (true) {
-            $check instanceof HealthCheck => $check->health_check,
-            $check instanceof Check => $check->key(),
-            is_subclass_of($check, Check::class) => (new $check)->key(),
-            default => $check,
-        };
+        $key = $check instanceof HealthCheck ? $check->health_check : $this->keyFor($check);
 
         $this->unmonitored[] = ['key' => $key, 'notifiable' => $this->identify($notifiable)];
 
@@ -313,7 +308,7 @@ final class HealthFake extends HealthManager
      */
     public function assertMonitored(string $check, ?Model $notifiable = null): void
     {
-        $key = $this->keyOf($check);
+        $key = $this->keyFor($check);
 
         PHPUnit::assertTrue(
             $this->recorded($this->monitored, $key, $notifiable),
@@ -331,7 +326,7 @@ final class HealthFake extends HealthManager
      */
     public function assertUnmonitored(string $check, ?Model $notifiable = null): void
     {
-        $key = $this->keyOf($check);
+        $key = $this->keyFor($check);
 
         PHPUnit::assertTrue(
             $this->recorded($this->unmonitored, $key, $notifiable),
@@ -494,11 +489,6 @@ final class HealthFake extends HealthManager
         }
 
         return false;
-    }
-
-    private function keyOf(string $check): string
-    {
-        return is_subclass_of($check, Check::class) ? (new $check)->key() : $check;
     }
 
     private function against(?Model $notifiable): string

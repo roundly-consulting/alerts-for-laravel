@@ -8,6 +8,7 @@ use RoundlyConsulting\Alerts\Check;
 use RoundlyConsulting\Alerts\Enums\Frequency;
 use RoundlyConsulting\Alerts\Exceptions\InvalidCronExpression;
 use RoundlyConsulting\Alerts\Exceptions\InvalidHealthCheck;
+use RoundlyConsulting\Alerts\HealthManager;
 use RoundlyConsulting\Alerts\Support\CronSchedule;
 use RoundlyConsulting\Alerts\Support\MonitorOptions;
 
@@ -37,20 +38,16 @@ final readonly class ScheduleHealthCheckData
     ) {}
 
     /**
-     * The health-check key persisted on the HealthCheck row. A Check class-string
-     * is resolved to its key(); any other string is treated as a key already.
+     * The health-check key persisted on the HealthCheck row. A Check class-string is
+     * resolved through the registry — the key of the instance registered for that class,
+     * else of a fresh one — so it matches what `run()` uses; any other string is treated
+     * as a key already.
+     *
+     * @throws InvalidHealthCheck for a class that is not a Check
      */
     public function key(): string
     {
-        if (is_subclass_of($this->check, Check::class)) {
-            return (new $this->check)->key();
-        }
-
-        if (class_exists($this->check)) {
-            throw InvalidHealthCheck::doesntExtendBaseCheck(new $this->check);
-        }
-
-        return $this->check;
+        return app(HealthManager::class)->keyFor($this->check);
     }
 
     /**

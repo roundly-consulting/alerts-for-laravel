@@ -225,6 +225,22 @@ class HealthManager
         return $instances->first() ?? new $check;
     }
 
+    /**
+     * The key a check is stored under: an instance's own key, a Check class-string's key as
+     * resolveCheck() finds it (the registered instance's, so `as()` and constructor
+     * arguments apply), any other string as given.
+     *
+     * @internal
+     */
+    public function keyFor(string|Check $check): string
+    {
+        if ($check instanceof Check) {
+            return $check->key();
+        }
+
+        return class_exists($check) ? $this->resolveCheck($check)->key() : $check;
+    }
+
     /*
      * The operations behind for() and silences(). They are public only so the handle
      * and the sub-accessor can reach them, and @internal so the facade never documents

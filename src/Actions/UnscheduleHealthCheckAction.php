@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use RoundlyConsulting\Alerts\Check;
 use RoundlyConsulting\Alerts\Exceptions\InvalidHealthCheck;
 use RoundlyConsulting\Alerts\HealthCheck;
+use RoundlyConsulting\Alerts\HealthManager;
 use RoundlyConsulting\Alerts\Support\HealthCheckModel;
 
 /**
@@ -17,6 +18,10 @@ use RoundlyConsulting\Alerts\Support\HealthCheckModel;
  */
 final readonly class UnscheduleHealthCheckAction
 {
+    public function __construct(
+        private HealthManager $health,
+    ) {}
+
     public function execute(Model $notifiable, string|Check|HealthCheck $check): int
     {
         if ($check instanceof HealthCheck) {
@@ -30,16 +35,7 @@ final readonly class UnscheduleHealthCheckAction
         return (int) HealthCheckModel::query()
             ->where('notifiable_type', $notifiable->getMorphClass())
             ->where('notifiable_id', $notifiable->getKey())
-            ->where('health_check', $this->key($check))
+            ->where('health_check', $this->health->keyFor($check))
             ->delete();
-    }
-
-    private function key(string|Check $check): string
-    {
-        if ($check instanceof Check) {
-            return $check->key();
-        }
-
-        return is_subclass_of($check, Check::class) ? (new $check)->key() : $check;
     }
 }
