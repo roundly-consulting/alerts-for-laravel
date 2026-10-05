@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use RoundlyConsulting\Alerts\Database\Factories\HealthCheckFactory;
+use RoundlyConsulting\Alerts\Enums\Status;
 use RoundlyConsulting\Alerts\Exceptions\InvalidHealthCheck;
 use RoundlyConsulting\Alerts\Exceptions\InvalidNotifiableForHealthCheck;
 use RoundlyConsulting\Alerts\Facades\Health as HealthFacade;
@@ -169,43 +170,65 @@ class HealthCheck extends Model
     /**
      * Percentage of recorded runs whose status was not alertable, over an optional
      * window. Returns 100.0 when there is no history.
+     *
+     * Two counts in the database: the report calls this for every monitor on every
+     * request, and a month of every-minute history is ~43k rows to hydrate otherwise.
      */
     public function uptimePercentage(?CarbonInterface $since = null): float
     {
-        $query = $this->runs();
+        $total = $this->history($since)->count();
 
-        if ($since !== null) {
-            $query->where('ran_at', '>=', $since);
-        }
-
-        $runs = $query->get(['status']);
-
-        if ($runs->isEmpty()) {
+        if ($total === 0) {
             return 100.0;
         }
 
-        $healthy = $runs->reject(fn (HealthCheckRun $run): bool => $run->status->isAlertable())->count();
+        $healthy = $this->history($since)
+            ->whereIn('status', array_map(
+                fn (Status $status): string => $status->value,
+                array_filter(Status::cases(), fn (Status $status): bool => ! $status->isAlertable()),
+            ))
+            ->count();
 
-        return round(($healthy / $runs->count()) * 100, 2);
+        return round(($healthy / $total) * 100, 2);
     }
 
     /**
-     * 95th-percentile run duration in milliseconds over an optional window.
+     * 95th-percentile run duration in milliseconds over an optional window: the
+     * nearest-rank value ({@see Percentile::nearestRank()}), read as one row at its
+     * offset in duration order rather than by loading every duration.
      */
     public function p95LatencyMs(?CarbonInterface $since = null): int
     {
-        $query = $this->runs();
+        $total = $this->history($since)->count();
+
+        if ($total === 0) {
+            return 0;
+        }
+
+        $rank = (int) ceil((95 / 100) * $total);
+
+        return (int) $this->history($since)
+            ->orderBy('duration_ms')
+            ->offset($rank - 1)
+            ->limit(1)
+            ->value('duration_ms');
+    }
+
+    /**
+     * The run history over an optional window, unordered (an aggregate takes no ORDER BY
+     * on postgres).
+     *
+     * @return HasMany<HealthCheckRun, $this>
+     */
+    private function history(?CarbonInterface $since): HasMany
+    {
+        $query = $this->runs()->reorder();
 
         if ($since !== null) {
             $query->where('ran_at', '>=', $since);
         }
 
-        /** @var list<int> $durations */
-        $durations = $query->get(['duration_ms'])
-            ->map(fn (HealthCheckRun $run): int => $run->duration_ms)
-            ->all();
-
-        return Percentile::nearestRank($durations, 95);
+        return $query;
     }
 
     public function dispatchHealthCheckJob(): void

@@ -48,6 +48,9 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
 - `CacheCheck` writes its sentinel under a key unique to the run and removes it afterwards, so
   two runs overlapping on a shared store no longer read each other's value and report a false
   `cache_mismatch` failure.
+- `HealthCheck::uptimePercentage()` and `p95LatencyMs()` — and with them `Health::report()` and
+  the health endpoint — no longer load every run into memory: uptime is two counts and the p95 is
+  one row read at its nearest-rank offset, with the same results.
 
 ## 1.0.1 - 2026-10-04
 

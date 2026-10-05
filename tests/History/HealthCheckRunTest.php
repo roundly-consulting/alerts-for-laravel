@@ -2,9 +2,14 @@
 
 declare(strict_types=1);
 
+use Illuminate\Database\Eloquent\Factories\Sequence;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Facades\DB;
 use RoundlyConsulting\Alerts\Actions\RunHealthCheckAction;
 use RoundlyConsulting\Alerts\Enums\Status;
+use RoundlyConsulting\Alerts\Facades\Health;
 use RoundlyConsulting\Alerts\HealthCheckRun;
+use RoundlyConsulting\Alerts\Support\Percentile;
 use RoundlyConsulting\Alerts\Tests\HealthChecks\ExampleHealthCheck;
 use RoundlyConsulting\Alerts\Tests\Models\Team;
 use RoundlyConsulting\Alerts\Tests\Models\User;
@@ -103,4 +108,44 @@ it('honours a since window for uptime and p95', function () {
 
     expect($healthCheck->uptimePercentage(now()->subDay()))->toBe(100.0)
         ->and($healthCheck->p95LatencyMs(now()->subDay()))->toBe(10);
+});
+
+it('reports uptime and p95 latency with bounded queries over a long history', function () {
+    $healthCheck = createHealthCheckWithNotifiable();
+
+    $runs = HealthCheckRun::factory()
+        ->count(2000)
+        ->state(new Sequence(fn (Sequence $sequence): array => [
+            'status' => match (true) {
+                $sequence->index % 7 === 0 => Status::Failed,
+                $sequence->index % 11 === 0 => Status::Warning,
+                $sequence->index % 13 === 0 => Status::Skipped,
+                default => Status::Ok,
+            },
+            'duration_ms' => ($sequence->index * 37) % 1000 + 1,
+            'ran_at' => now()->subMinutes($sequence->index),
+        ]))
+        ->create(['health_check_id' => $healthCheck->getKey()]);
+
+    $healthy = $runs->reject(fn (HealthCheckRun $run): bool => $run->status->isAlertable())->count();
+    $durations = $runs->map(fn (HealthCheckRun $run): int => $run->duration_ms)->values()->all();
+
+    $history = [];
+    DB::listen(function (QueryExecuted $query) use (&$history): void {
+        if (str_contains($query->sql, 'health_check_runs')) {
+            $history[] = mb_strtolower($query->sql);
+        }
+    });
+
+    $check = Health::report()->checks()[0];
+
+    expect($check->uptime)->toBe(round($healthy / 2000 * 100, 2))
+        ->and($check->p95LatencyMs)->toBe(Percentile::nearestRank($durations, 95))
+        ->and($history)->not->toBeEmpty();
+
+    // Every read of the run history is an aggregate or fetches a bounded row count — none
+    // hydrates the whole history, which is ~43k rows per monitor at the defaults.
+    foreach ($history as $sql) {
+        expect(str_contains($sql, 'count(') || str_contains($sql, 'limit'))->toBeTrue($sql);
+    }
 });
