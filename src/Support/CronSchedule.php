@@ -12,7 +12,7 @@ use RoundlyConsulting\Alerts\Exceptions\InvalidCronExpression;
  * Minimal native 5-field cron "is due now" evaluator.
  *
  * Supports standard `minute hour day-of-month month day-of-week` expressions with
- * `*`, lists (`1,2,3`), ranges (`1-5`), steps (`* / 5`, `1-30/2`), day and month
+ * `*`, lists (`1,2,3`), ranges (`1-5`), steps (`* / 5`, `1-30/2`, `5/15` = `5-59/15`), day and month
  * names (`MON-FRI`, `JAN,JUL`, case-insensitive) and the common named aliases
  * (`@hourly`, `@daily`, …). It deliberately covers only what the
  * package's own `Check::frequencies()` and consumers realistically need, keeping the
@@ -127,8 +127,9 @@ final class CronSchedule
 
         foreach (explode(',', $field) as $segment) {
             $step = 1;
+            $stepped = str_contains($segment, '/');
 
-            if (str_contains($segment, '/')) {
+            if ($stepped) {
                 [$segment, $stepRaw] = explode('/', $segment, 2);
 
                 if (! ctype_digit($stepRaw) || (int) $stepRaw < 1) {
@@ -139,6 +140,11 @@ final class CronSchedule
             }
 
             [$start, $end] = $this->resolveRange($segment, $min, $max, $expression, $names);
+
+            // A stepped single value (`5/15`) steps from that value to the end of the field.
+            if ($stepped && $segment !== '*' && ! str_contains($segment, '-')) {
+                $end = $max;
+            }
 
             for ($value = $start; $value <= $end; $value += $step) {
                 $values[$value] = $value;
@@ -156,8 +162,13 @@ final class CronSchedule
      */
     private function resolveRange(string $segment, int $min, int $max, string $expression, array $names): array
     {
-        if ($segment === '*' || $segment === '') {
+        if ($segment === '*') {
             return [$min, $max];
+        }
+
+        // An empty list segment (`5,`, `,5`, `/5`) is a typo, never "every value".
+        if ($segment === '') {
+            throw InvalidCronExpression::malformed($expression);
         }
 
         if (str_contains($segment, '-')) {

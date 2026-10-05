@@ -134,3 +134,24 @@ it('matches either day field when both day-of-month and day-of-week are restrict
     'unrestricted day-of-month keeps the weekday filter' => ['0 0 * * MON', '2026-10-01 00:00:00', false],
     'unrestricted day-of-week keeps the day filter' => ['0 0 15 * *', '2026-10-05 00:00:00', false],
 ]);
+
+it('reads a stepped single value as stepping from that value to the end of the field', function (string $at, bool $due) {
+    Carbon::setTestNow($at);
+
+    expect((new CronSchedule('5/15 * * * *'))->isDue())->toBe($due);
+})->with([
+    'the start value' => ['2026-10-05 12:05:00', true],
+    'one step later' => ['2026-10-05 12:20:00', true],
+    'the last step' => ['2026-10-05 12:50:00', true],
+    'between steps' => ['2026-10-05 12:21:00', false],
+    'before the start value' => ['2026-10-05 12:00:00', false],
+]);
+
+it('rejects an empty list segment instead of reading it as every value', function (string $expression) {
+    CronSchedule::validate($expression);
+})->throws(InvalidCronExpression::class)->with([
+    'trailing comma' => ['5, * * * *'],
+    'lone comma' => [', * * * *'],
+    'leading comma' => [',5 * * * *'],
+    'step without a range' => ['/5 * * * *'],
+]);

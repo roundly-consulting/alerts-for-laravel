@@ -20,6 +20,9 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
 - A cron expression that restricts both the day of the month and the day of the week
   (`0 0 1,15 * MON`) now runs on a day matching either field, as standard cron and Laravel's
   scheduler do; it used to run only on days matching both.
+- A stepped single value in a cron field (`5/15`) now steps from that value to the end of the
+  field (`5,20,35,50`) instead of matching the value alone, and an empty list segment (`5,`, `,5`,
+  `/5`) is rejected with `InvalidCronExpression` instead of being read as "every value".
 
 ## 1.0.1 - 2026-10-04
 
