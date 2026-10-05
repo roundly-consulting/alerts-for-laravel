@@ -6,10 +6,19 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
 
 ## Unreleased
 
+## 1.1.0 - 2026-10-05
+
 ### Added
 
 - `alerts.route.details` (`ALERTS_ROUTE_DETAILS`, default `false`): opt the JSON health endpoint
   back into each check's stored message, tags, last alert time and muted flag.
+- `InvalidRetention` (an `InvalidArgumentException`), thrown by `Health::prune()` for a run-history
+  retention below 1 day.
+- `InvalidHealthCheck::invalidEscalationThreshold()` and `MonitorOptions::validateEscalation()`:
+  an escalation policy whose thresholds are not whole numbers of at least 1 is refused.
+- `CronSchedule::isDueBetween($after, $until)` tells whether a cron expression is due at any
+  minute in that window, and `HealthCheck::isDue()` takes an optional `$since` to ask the same of
+  a monitor.
 
 ### Changed
 
@@ -17,8 +26,11 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
   `status`, `uptime` and `p95_latency_ms` only. It is unauthenticated unless you add middleware
   (`Health::routes()->middleware('auth.basic')`), and a stored alert message can carry raw
   exception text, so `message`, `tags`, `last_alert_at` and `muted` are no longer exposed by
-  default; set `alerts.route.details` to `true` for the previous body. The status code and the
-  top-level `status` are unchanged, and `Health::report()->toArray()` still returns everything.
+  default. The status code and the top-level `status` are unchanged, and
+  `Health::report()->toArray()` still returns everything. Upgrade: a client that reads those
+  fields sets `alerts.route.details` (`ALERTS_ROUTE_DETAILS=true`) to get the previous body.
+- Documentation: the README hero image uses an absolute URL, so it renders on Packagist and other
+  sites.
 - Documentation: `Health::report()` / `status()` cover the on-demand rows `Health::for($owner)->run()`
   creates as well as scheduled monitors — a failed on-demand run counts until a passing re-run of
   the check clears it.
