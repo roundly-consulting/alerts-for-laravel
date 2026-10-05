@@ -105,13 +105,19 @@ return [
     |
     | Configuration for the opt-in JSON health endpoint registered via
     | Health::routes() in the host application's routes file. The endpoint is
-    | never registered automatically.
+    | never registered automatically and is unauthenticated unless you chain
+    | middleware: Health::routes()->middleware('auth.basic').
+    |
+    | By default each check renders only its key, name, status, uptime and p95
+    | latency. `details` adds the stored alert message (which can carry raw
+    | exception text), the tags, the last alert time and the muted flag.
     |
     */
 
     'route' => [
         'uri' => env('ALERTS_ROUTE_URI', 'health'),
         'name' => 'alerts.health',
+        'details' => env('ALERTS_ROUTE_DETAILS', false),
     ],
 
     /*

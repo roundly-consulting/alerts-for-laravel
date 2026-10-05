@@ -66,3 +66,49 @@ it('registers a named route', function () {
     expect($route->getName())->toBe('alerts.health')
         ->and($route->uri())->toBe('healthz');
 });
+
+function failingTenantCheck(): void
+{
+    Health::check(ExampleHealthCheck::class);
+
+    $team = Team::create();
+    $healthCheck = $team->createHealthCheck('example_health_check', '* * * * *', tags: ['tenant-a']);
+
+    Alert::create([
+        'notifiable_type' => $team->getMorphClass(),
+        'notifiable_id' => $team->getKey(),
+        'health_check_id' => $healthCheck->getKey(),
+        'status' => Status::Failed,
+        'message' => 'SQLSTATE[HY000] [2002] (Connection: tenant_a, Host: 10.0.3.4, Database: tenant_a_prod)',
+        'triggered_at' => now(),
+    ]);
+}
+
+it('renders only key, name, status, uptime and latency by default', function () {
+    failingTenantCheck();
+
+    $check = $this->getJson('health')
+        ->assertStatus(503)
+        ->json('checks.0');
+
+    expect(array_keys($check))->toBe(['key', 'name', 'status', 'uptime', 'p95_latency_ms'])
+        ->and($check['status'])->toBe('failed')
+        ->and(json_encode($check))->not->toContain('10.0.3.4');
+});
+
+it('renders messages and tags when the details flag is on', function () {
+    config()->set('alerts.route.details', true);
+    failingTenantCheck();
+
+    $this->getJson('health')
+        ->assertStatus(503)
+        ->assertJsonPath('checks.0.message', 'SQLSTATE[HY000] [2002] (Connection: tenant_a, Host: 10.0.3.4, Database: tenant_a_prod)')
+        ->assertJsonPath('checks.0.tags', ['tenant-a'])
+        ->assertJsonPath('checks.0.muted', false);
+});
+
+it('takes middleware on the route it registers', function () {
+    $route = Health::routes('healthz')->middleware('auth.basic');
+
+    expect($route->gatherMiddleware())->toBe(['auth.basic']);
+});

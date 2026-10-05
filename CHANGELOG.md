@@ -6,6 +6,20 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
 
 ## Unreleased
 
+### Added
+
+- `alerts.route.details` (`ALERTS_ROUTE_DETAILS`, default `false`): opt the JSON health endpoint
+  back into each check's stored message, tags, last alert time and muted flag.
+
+### Changed
+
+- The JSON health endpoint (`Health::routes()`) now renders each check as `key`, `name`,
+  `status`, `uptime` and `p95_latency_ms` only. It is unauthenticated unless you add middleware
+  (`Health::routes()->middleware('auth.basic')`), and a stored alert message can carry raw
+  exception text, so `message`, `tags`, `last_alert_at` and `muted` are no longer exposed by
+  default; set `alerts.route.details` to `true` for the previous body. The status code and the
+  top-level `status` are unchanged, and `Health::report()->toArray()` still returns everything.
+
 ### Fixed
 
 - A recipient whose notification throws (a bad address, a mail server that is down) is now
