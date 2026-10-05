@@ -68,6 +68,11 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
   row used to record a run, open an alert and notify. `unmonitor()` now also closes any alert
   still open on the rows it removes (`recovered_at` set, no `HealthCheckRecovered` event), which
   used to stay open forever.
+- `Health::fake()` now behaves like the real manager for monitors: a run goes through the
+  notifiable's oldest monitor of the check (it used the newest), `for($owner)->monitors()` lists
+  what was scheduled (it was always empty), a monitor that never ran is in `report()` as `ok`, and
+  `unmonitor()` removes the monitors — and the on-demand one — from later runs and the report,
+  returning how many it removed (it returned `0` and changed nothing).
 
 ## 1.0.1 - 2026-10-04
 

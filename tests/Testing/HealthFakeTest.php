@@ -160,9 +160,12 @@ it('records schedules from the handle, the DTO and every trait entry point', fun
     $team->monitor(new ScheduleHealthCheckData(check: 'trait_dto'));
     $team->createHealthCheck('trait_create', '* * * * *');
 
+    // monitors() lists what was scheduled, as the real manager does (it used to be pinned
+    // empty here, which was the fake diverging from the real API, not a contract).
     expect($pending->exists)->toBeFalse()
         ->and($pending->frequency)->toBe('@hourly')
-        ->and(Health::for($team)->monitors())->toHaveCount(0);
+        ->and(Health::for($team)->monitors())->toHaveCount(5)
+        ->and(Health::for($team)->monitors()->first())->toBe($pending);
 
     $fake->assertMonitored(ExampleHealthCheck::class, $team);
     $fake->assertMonitored('dto_check');
@@ -456,3 +459,102 @@ it('refuses a prune below one day under the fake too, recording nothing', functi
 
     $fake->assertNothingPruned();
 });
+
+/*
+ * Parity with the real manager: each scenario runs once against the database and once
+ * under Health::fake(), and must come out the same both times.
+ */
+it('gives the real manager\'s outcome under the fake', function (Closure $scenario, array $expected): void {
+    Health::checks([ExampleHealthCheck::class, AnotherHealthCheck::class]);
+
+    $real = $scenario(Team::create());
+
+    Health::fake();
+    $faked = $scenario(Team::create());
+
+    expect($real)->toBe($expected)
+        ->and($faked)->toBe($expected);
+})->with([
+    'the oldest of two monitors decides the run' => [
+        function (Team $team): array {
+            ExampleHealthCheck::$ok = false;
+            Health::for($team)->monitor(ExampleHealthCheck::class)->failAfter(1)->save();
+            Health::for($team)->monitor(ExampleHealthCheck::class)->failAfter(3)->save();
+
+            Health::for($team)->run(ExampleHealthCheck::class);
+
+            return [Health::for($team)->status()->value, count(Health::for($team)->report()->checks())];
+        },
+        ['failed', 2],
+    ],
+    'monitors() lists what was scheduled' => [
+        function (Team $team): array {
+            Health::for($team)->monitor(ExampleHealthCheck::class)->hourly()->save();
+            Health::for($team)->monitor(AnotherHealthCheck::class)->daily()->save();
+            Health::for(Team::create())->monitor(ExampleHealthCheck::class)->save();
+
+            return Health::for($team)->monitors()
+                ->map(fn (RoundlyConsulting\Alerts\HealthCheck $row): array => [$row->health_check, $row->frequency])
+                ->all();
+        },
+        [['example_health_check', '@hourly'], ['another_health_check', '@daily']],
+    ],
+    'a monitor that never ran is in the report' => [
+        function (Team $team): array {
+            Health::for($team)->monitor(ExampleHealthCheck::class)->tags(['db'])->save();
+
+            return array_map(
+                fn (RoundlyConsulting\Alerts\Status\CheckStatus $check): array => [$check->key, $check->status->value, $check->tags, $check->uptime],
+                Health::for($team)->report()->checks(),
+            );
+        },
+        [['example_health_check', 'ok', ['db'], 100.0]],
+    ],
+    'unmonitor drops the monitor\'s options' => [
+        function (Team $team): array {
+            ExampleHealthCheck::$ok = false;
+            Health::for($team)->monitor(ExampleHealthCheck::class)->failAfter(3)->save();
+            $removed = Health::for($team)->unmonitor(ExampleHealthCheck::class);
+
+            Health::for($team)->run(ExampleHealthCheck::class);
+
+            return [$removed, Health::for($team)->status()->value, count(Health::for($team)->report()->checks())];
+        },
+        [1, 'failed', 1],
+    ],
+    'unmonitor drops the monitor from the report' => [
+        function (Team $team): array {
+            ExampleHealthCheck::$ok = false;
+            Health::for($team)->monitor(ExampleHealthCheck::class)->save();
+            Health::for($team)->run(ExampleHealthCheck::class);
+            $removed = Health::for($team)->unmonitor(ExampleHealthCheck::class);
+
+            return [$removed, Health::for($team)->status()->value, count(Health::for($team)->report()->checks()), Health::for($team)->monitors()->count()];
+        },
+        [1, 'ok', 0, 0],
+    ],
+    'unmonitor of one row keeps the others' => [
+        function (Team $team): array {
+            $first = Health::for($team)->monitor(ExampleHealthCheck::class)->hourly()->save();
+            Health::for($team)->monitor(ExampleHealthCheck::class)->daily()->save();
+
+            return [Health::for($team)->unmonitor($first), Health::for($team)->monitors()->pluck('frequency')->all()];
+        },
+        [1, ['@daily']],
+    ],
+    'running a scheduled row uses that row' => [
+        function (Team $team): array {
+            ExampleHealthCheck::$ok = false;
+            Health::for($team)->monitor(ExampleHealthCheck::class)->failAfter(3)->save();
+            $second = Health::for($team)->monitor(ExampleHealthCheck::class)->failAfter(1)->save();
+
+            Health::for($team)->run($second);
+
+            return array_map(
+                fn (RoundlyConsulting\Alerts\Status\CheckStatus $check): string => $check->status->value,
+                Health::for($team)->report()->checks(),
+            );
+        },
+        ['ok', 'failed'],
+    ],
+]);

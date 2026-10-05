@@ -10,7 +10,8 @@ use RoundlyConsulting\Alerts\Status\CheckStatus;
 use RoundlyConsulting\Alerts\Support\MonitorOptions;
 
 /**
- * The in-memory stand-in for one monitor (a notifiable + a check) inside `Health::fake()`:
+ * The in-memory stand-in for one monitor (a scheduled row, or a notifiable's on-demand row
+ * for a check) inside `Health::fake()`:
  * the consecutive-result counters and the open alert the real pipeline keeps in the
  * database, driven by the same gates — failAfter, recoverAfter and muting.
  *
@@ -128,10 +129,14 @@ final class FakeMonitor
     }
 
     /**
-     * A monitor exists only once it has been run, so there is always a result.
+     * 100.0 for a monitor that has not run yet, as a real row without history reports.
      */
     private function uptime(): float
     {
+        if ($this->results === []) {
+            return 100.0;
+        }
+
         $healthy = array_filter($this->results, fn (CheckResult $result): bool => ! $result->status->isAlertable());
 
         return round((count($healthy) / count($this->results)) * 100, 2);

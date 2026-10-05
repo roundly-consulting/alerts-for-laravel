@@ -32,20 +32,39 @@ use RoundlyConsulting\PackageToolkit\Support\Config;
  * mutating call — through the facade, an injected manager, `for()`, `silences()` or
  * the UsesHealthChecks trait — for the assertions below.
  *
- * A run goes through the same gates as the real pipeline, kept in memory per
+ * A run goes through the same gates as the real pipeline, kept in memory per row the
+ * real manager would have written — each scheduled monitor, plus one on-demand monitor per
  * notifiable and check: a thrown exception or an overrun timeout is a failed result,
  * an alert fires only once `failAfter` consecutive failures are reached (and not while
  * muted), and a recovery is recorded only when an open alert closes after
- * `recoverAfter` consecutive successes. The options come from the row being run, a
- * monitor recorded for the notifiable, or an inline check's `define()`.
+ * `recoverAfter` consecutive successes. A run uses the row it is given, else the
+ * notifiable's OLDEST live monitor for the check (as the real run-now does), else an
+ * on-demand monitor with an inline check's `define()` options. Monitors are listed by
+ * `monitors()` and reported before they ever run; `unmonitor()` removes them, with the
+ * on-demand monitor, exactly as the real one soft-deletes the rows.
  */
 final class HealthFake extends HealthManager
 {
     /** @var list<string> */
     private array $runs = [];
 
-    /** @var array<string, FakeMonitor> */
+    /**
+     * Keyed by the row they stand for: `schedule#n` for a monitor, `<notifiable>|<key>`
+     * for the on-demand row (or a database row run directly).
+     *
+     * @var array<string, FakeMonitor>
+     */
     private array $monitors = [];
+
+    /**
+     * The monitors still scheduled, oldest first — the rows a real `schedule()` would
+     * have written and no `unmonitor()` has removed.
+     *
+     * @var array<string, array{scope: string, key: string, row: HealthCheck}>
+     */
+    private array $schedules = [];
+
+    private int $scheduled = 0;
 
     /** @var list<string> */
     private array $alerted = [];
@@ -53,7 +72,7 @@ final class HealthFake extends HealthManager
     /** @var list<string> */
     private array $recovered = [];
 
-    /** @var list<array{key: string, notifiable: string, data: ScheduleHealthCheckData}> */
+    /** @var list<array{key: string, notifiable: string}> */
     private array $monitored = [];
 
     /** @var list<array{key: string, notifiable: string}> */
@@ -87,18 +106,33 @@ final class HealthFake extends HealthManager
 
     public function runFor(Model $notifiable, string|Check|HealthCheck $check): CheckResult
     {
+        $scope = $this->identify($notifiable);
+
         if ($check instanceof HealthCheck) {
             if (! $check->isScheduledFor($notifiable)) {
                 throw InvalidHealthCheck::notScheduledFor($check, $notifiable);
             }
 
             $instance = $check->healthCheck();
-            $options = $check->options();
-            $tags = $check->effectiveTags();
+            $row = $check;
+            $id = $this->scheduleOf($check) ?? $scope.'|'.$instance->key();
         } else {
             $instance = $this->resolveCheck($check);
-            [$options, $rowTags] = $this->optionsFor($notifiable, $instance);
-            $tags = array_values(array_unique([...$rowTags, ...$instance->tags()]));
+            $id = $this->oldestSchedule($scope, $instance->key());
+            $row = $id === null ? null : $this->schedules[$id]['row'];
+            $id ??= $scope.'|'.$instance->key();
+        }
+
+        if ($row !== null) {
+            $options = $row->options();
+            $tags = array_values(array_unique([...$row->effectiveTags(), ...$instance->tags()]));
+        } else {
+            /** @var array<int|string, string> $escalation */
+            $escalation = config('alerts.escalation', []);
+            $meta = $instance instanceof ClosureCheck ? $instance->scheduleDefaults()->metaWithOptions() : [];
+
+            $options = MonitorOptions::fromMeta($meta, $escalation);
+            $tags = $instance->tags();
         }
 
         $key = $instance->key();
@@ -108,7 +142,7 @@ final class HealthFake extends HealthManager
 
         $muted = $this->silenced([$key, ...$tags, AlertSilence::GLOBAL_KEY], $notifiable);
 
-        $outcome = $this->monitorFor($notifiable, $key, $instance->name(), $tags)
+        $outcome = $this->monitorFor($id, $scope, $key, $instance->name(), $tags)
             ->apply($result, $options, $muted);
 
         match ($outcome) {
@@ -121,8 +155,9 @@ final class HealthFake extends HealthManager
     }
 
     /**
-     * Built from the monitors this fake ran — the open alert per notifiable and check,
-     * as the real report is — never from the database.
+     * Built from this fake's monitors — every live schedule, run or not, and every
+     * on-demand monitor, each with its open alert, as the real report is — never from the
+     * database.
      *
      * @param  list<string>|null  $tags
      */
@@ -148,50 +183,86 @@ final class HealthFake extends HealthManager
     }
 
     /**
-     * Records the schedule and returns an unsaved row carrying what would be stored.
+     * Records the schedule, keeps it as a live monitor, and returns an unsaved row carrying
+     * what would be stored.
      */
     public function scheduleFor(Model $notifiable, ScheduleHealthCheckData $data): HealthCheck
     {
         // Validated first, as the real action does: an invalid cron is refused, not recorded.
         $frequency = $data->cronFrequency();
+        $key = $data->key();
+        $scope = $this->identify($notifiable);
 
-        $this->monitored[] = [
-            'key' => $data->key(),
-            'notifiable' => $this->identify($notifiable),
-            'data' => $data,
-        ];
+        $this->monitored[] = ['key' => $key, 'notifiable' => $scope];
 
-        return HealthCheckModel::new()->forceFill([
+        $row = HealthCheckModel::new()->forceFill([
             'notifiable_type' => $notifiable->getMorphClass(),
             'notifiable_id' => $notifiable->getKey(),
-            'health_check' => $data->key(),
+            'health_check' => $key,
             'frequency' => $frequency,
             'max_attempts' => $data->maxAttempts,
             'decay_minutes' => $data->decayMinutes,
             'tags' => $data->tags === [] ? null : $data->tags,
             'meta' => $data->metaWithOptions(),
         ]);
+
+        $id = 'schedule#'.(++$this->scheduled);
+
+        $this->schedules[$id] = ['scope' => $scope, 'key' => $key, 'row' => $row];
+        $this->monitors[$id] = new FakeMonitor($key, $scope, $this->find($key)?->name() ?? $key, $row->effectiveTags());
+
+        return $row;
     }
 
+    /**
+     * Records the unschedule and removes what the real one soft-deletes: every live
+     * monitor of the check for the notifiable plus its on-demand monitor, or the one row
+     * given. A database row the fake did not schedule is left alone (the fake never
+     * writes), so it counts nothing.
+     */
     public function unscheduleFor(Model $notifiable, string|Check|HealthCheck $check): int
     {
         if ($check instanceof HealthCheck && ! $check->isScheduledFor($notifiable)) {
             throw InvalidHealthCheck::notScheduledFor($check, $notifiable);
         }
 
+        $scope = $this->identify($notifiable);
         $key = $check instanceof HealthCheck ? $check->health_check : $this->keyFor($check);
 
-        $this->unmonitored[] = ['key' => $key, 'notifiable' => $this->identify($notifiable)];
+        $this->unmonitored[] = ['key' => $key, 'notifiable' => $scope];
 
-        return 0;
+        if ($check instanceof HealthCheck) {
+            $id = $this->scheduleOf($check);
+
+            return $id === null ? 0 : $this->forget([$id]);
+        }
+
+        $ids = array_keys(array_filter(
+            $this->schedules,
+            fn (array $schedule): bool => $schedule['scope'] === $scope && $schedule['key'] === $key,
+        ));
+
+        return $this->forget([...$ids, $scope.'|'.$key]);
     }
 
     /**
+     * The notifiable's live monitors, oldest first, as the unsaved rows `schedule()` returned.
+     *
      * @return EloquentCollection<int, HealthCheck>
      */
     public function scheduledFor(Model $notifiable): EloquentCollection
     {
-        return new EloquentCollection;
+        $scope = $this->identify($notifiable);
+
+        $rows = [];
+
+        foreach ($this->schedules as $schedule) {
+            if ($schedule['scope'] === $scope) {
+                $rows[] = $schedule['row'];
+            }
+        }
+
+        return new EloquentCollection($rows);
     }
 
     /**
@@ -444,38 +515,59 @@ final class HealthFake extends HealthManager
     }
 
     /**
-     * The options a run uses when it is not given a row: those of the latest monitor
-     * recorded for this notifiable and check (the row the real run would go through),
-     * else an inline check's `define()`, else the defaults.
-     *
-     * @return array{0: MonitorOptions, 1: list<string>}
+     * The notifiable's oldest live monitor of the check — the row the real run-now goes
+     * through — or null when there is none.
      */
-    private function optionsFor(Model $notifiable, Check $check): array
+    private function oldestSchedule(string $scope, string $key): ?string
     {
-        $scope = $this->identify($notifiable);
-
-        /** @var array<int|string, string> $escalation */
-        $escalation = config('alerts.escalation', []);
-
-        foreach (array_reverse($this->monitored) as $monitor) {
-            if ($monitor['key'] === $check->key() && $monitor['notifiable'] === $scope) {
-                return [MonitorOptions::fromMeta($monitor['data']->metaWithOptions(), $escalation), $monitor['data']->tags];
+        foreach ($this->schedules as $id => $schedule) {
+            if ($schedule['scope'] === $scope && $schedule['key'] === $key) {
+                return $id;
             }
         }
 
-        $meta = $check instanceof ClosureCheck ? $check->scheduleDefaults()->metaWithOptions() : [];
+        return null;
+    }
 
-        return [MonitorOptions::fromMeta($meta, $escalation), []];
+    /**
+     * The live monitor a row returned by `schedule()` stands for, or null for any other row.
+     */
+    private function scheduleOf(HealthCheck $row): ?string
+    {
+        foreach ($this->schedules as $id => $schedule) {
+            if ($schedule['row'] === $row) {
+                return $id;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  list<string>  $ids
+     * @return int how many monitors were removed
+     */
+    private function forget(array $ids): int
+    {
+        $removed = 0;
+
+        foreach ($ids as $id) {
+            if (isset($this->monitors[$id])) {
+                $removed++;
+            }
+
+            unset($this->schedules[$id], $this->monitors[$id]);
+        }
+
+        return $removed;
     }
 
     /**
      * @param  list<string>  $tags
      */
-    private function monitorFor(Model $notifiable, string $key, string $name, array $tags): FakeMonitor
+    private function monitorFor(string $id, string $scope, string $key, string $name, array $tags): FakeMonitor
     {
-        $scope = $this->identify($notifiable);
-
-        $monitor = $this->monitors[$scope.'|'.$key] ??= new FakeMonitor($key, $scope, $name, $tags);
+        $monitor = $this->monitors[$id] ??= new FakeMonitor($key, $scope, $name, $tags);
         $monitor->describe($name, $tags);
 
         return $monitor;
