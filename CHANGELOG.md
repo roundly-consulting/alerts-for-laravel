@@ -76,6 +76,11 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
 - `alerts:list` shows a check's worst status across the notifiables it is scheduled for (it showed
   an arbitrary one, so one owner's failure could read `Ok`), and marks it muted only for a silence
   that applies to every notifiable — not for one scoped to a single owner.
+- `Alert::factory()` creates an open alert the way the pipeline opens one: on its health check's
+  notifiable (it used an unrelated one) and holding the check's open slot, so the report and the
+  pipeline see it — a failing run follows it instead of opening a second alert. `recovered()`
+  clears the slot. A second open factory alert for the same check is now refused by the unique
+  index, as in the pipeline.
 
 ## 1.0.1 - 2026-10-04
 
