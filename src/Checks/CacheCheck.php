@@ -13,7 +13,8 @@ use RoundlyConsulting\Alerts\Notifications\HealthCheckFailedNotification;
 use Throwable;
 
 /**
- * Verifies a cache store accepts writes and returns the value it stored.
+ * Verifies a cache store accepts writes and returns the value it stored, under a key
+ * unique to the run that it removes again.
  */
 final class CacheCheck extends Check
 {
@@ -39,9 +40,15 @@ final class CacheCheck extends Check
         $store = $this->store ?? (string) config('cache.default');
         $sentinel = (string) Str::uuid();
 
+        // A key of its own per run: two runs overlapping on one shared store (the check
+        // run for several notifiables at the same tick) must never read each other's value.
+        $key = 'alerts:cache-check:'.$sentinel;
+
         try {
-            Cache::store($store)->put('alerts:cache-check', $sentinel, 10);
-            $read = Cache::store($store)->get('alerts:cache-check');
+            $cache = Cache::store($store);
+            $cache->put($key, $sentinel, 10);
+            $read = $cache->get($key);
+            $cache->forget($key);
         } catch (Throwable $e) {
             return CheckResult::failed(
                 (string) __('alerts::checks.cache_unreachable', ['store' => $store]),

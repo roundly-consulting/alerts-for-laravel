@@ -31,6 +31,9 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
   overlap lock: several scheduler hosts no longer queue every due check once each (which tripped
   `failAfter`, `recoverAfter` and escalation early), and a scheduler killed mid-run no longer
   stops monitoring for up to 24 hours.
+- `CacheCheck` writes its sentinel under a key unique to the run and removes it afterwards, so
+  two runs overlapping on a shared store no longer read each other's value and report a false
+  `cache_mismatch` failure.
 
 ## 1.0.1 - 2026-10-04
 
