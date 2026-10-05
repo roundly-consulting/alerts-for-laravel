@@ -3,7 +3,10 @@
 declare(strict_types=1);
 
 use RoundlyConsulting\Alerts\CheckResult;
+use RoundlyConsulting\Alerts\DataTransferObjects\ScheduleHealthCheckData;
+use RoundlyConsulting\Alerts\Exceptions\InvalidHealthCheck;
 use RoundlyConsulting\Alerts\Facades\Health;
+use RoundlyConsulting\Alerts\HealthCheck;
 use RoundlyConsulting\Alerts\Support\MonitorOptions;
 use RoundlyConsulting\Alerts\Tests\HealthChecks\ExampleHealthCheck;
 use RoundlyConsulting\Alerts\Tests\Models\Team;
@@ -84,3 +87,24 @@ it('keeps consumer meta alongside declarative options', function () {
     expect($row->refresh()->meta['custom'])->toBe('value')
         ->and($row->options()->failAfter())->toBe(2);
 });
+
+it('refuses an escalation threshold that can never be reached', function (Closure $declare) {
+    Health::check(ExampleHealthCheck::class);
+
+    expect($declare)->toThrow(InvalidHealthCheck::class, 'Escalation threshold');
+
+    expect(HealthCheck::count())->toBe(0);
+})->with([
+    'level zero on a monitor' => fn () => Health::for(Team::create())
+        ->monitor(ExampleHealthCheck::class)->escalate([0 => 'owner'])->save(),
+    'a list-style policy on a monitor' => fn () => Health::for(Team::create())
+        ->monitor(ExampleHealthCheck::class)->escalate(['owner', 'team'])->save(),
+    'a negative threshold on a monitor' => fn () => Health::for(Team::create())
+        ->monitor(ExampleHealthCheck::class)->escalate([-1 => 'owner'])->save(),
+    'level zero on an inline check' => fn () => Health::define('flaky', fn () => true)
+        ->escalate([0 => 'owner']),
+    'a list-style policy on an inline check' => fn () => Health::define('flaky', fn () => true)
+        ->escalate(['owner', 'team']),
+    'level zero in the DTO' => fn () => Health::for(Team::create())
+        ->schedule(new ScheduleHealthCheckData(check: ExampleHealthCheck::class, escalation: [0 => 'owner'])),
+]);

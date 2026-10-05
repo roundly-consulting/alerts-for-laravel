@@ -31,6 +31,14 @@ final class InvalidHealthCheck extends Exception
         ));
     }
 
+    public static function invalidEscalationThreshold(int|string $threshold): self
+    {
+        return new self(sprintf(
+            'Escalation threshold [%s] is not a number of consecutive failures; key each group by a whole number of at least 1, e.g. [1 => \'owner\', 3 => \'team\'].',
+            (string) $threshold,
+        ));
+    }
+
     public static function notRegistered(string $key): self
     {
         return new self("No health check is registered for key [$key]. Register it via Health::check().");

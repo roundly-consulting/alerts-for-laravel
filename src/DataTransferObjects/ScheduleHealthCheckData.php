@@ -19,8 +19,10 @@ final readonly class ScheduleHealthCheckData
      * @param  list<string>  $tags
      * @param  list<string>|null  $notifyVia
      * @param  array<int, list<string>>  $notifyViaLevels
-     * @param  array<int, string>  $escalation
+     * @param  array<int, string>  $escalation  consecutive-failure threshold (at least 1) => group
      * @param  array<string, mixed>  $meta
+     *
+     * @throws InvalidHealthCheck for an escalation threshold below 1
      */
     public function __construct(
         public string $check,
@@ -35,7 +37,9 @@ final readonly class ScheduleHealthCheckData
         public array $notifyViaLevels = [],
         public array $escalation = [],
         public array $meta = [],
-    ) {}
+    ) {
+        MonitorOptions::validateEscalation($escalation);
+    }
 
     /**
      * The health-check key persisted on the HealthCheck row. A Check class-string is

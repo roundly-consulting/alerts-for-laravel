@@ -191,7 +191,7 @@ final class PendingScheduledCheck
      */
     public function escalate(array $policy): self
     {
-        $this->escalation = $policy;
+        $this->escalation = MonitorOptions::validateEscalation($policy);
 
         return $this;
     }

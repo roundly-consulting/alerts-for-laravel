@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Alerts\Support;
 
+use RoundlyConsulting\Alerts\Exceptions\InvalidHealthCheck;
+
 /**
  * Typed accessor over the reserved per-monitor declaration keys stored inside a
  * HealthCheck row's `meta` json. Keeps the schema small while keeping the option
@@ -34,6 +36,29 @@ final readonly class MonitorOptions
         private array $meta = [],
         private array $defaultEscalation = [],
     ) {}
+
+    /**
+     * Refuse an escalation policy with a threshold that can never be reached: the level
+     * is the consecutive-failure count, and a failing run has at least one, so a group
+     * keyed 0 — or a list-style policy (`['owner', 'team']`, keyed 0 and 1) — is never paged.
+     *
+     * @template TPolicy of array<array-key, mixed>
+     *
+     * @param  TPolicy  $policy
+     * @return TPolicy
+     *
+     * @throws InvalidHealthCheck
+     */
+    public static function validateEscalation(array $policy): array
+    {
+        foreach (array_keys($policy) as $threshold) {
+            if (! is_int($threshold) || $threshold < 1) {
+                throw InvalidHealthCheck::invalidEscalationThreshold($threshold);
+            }
+        }
+
+        return $policy;
+    }
 
     /**
      * @param  array<string, mixed>|null  $meta

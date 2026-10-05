@@ -51,6 +51,10 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
 - `HealthCheck::uptimePercentage()` and `p95LatencyMs()` — and with them `Health::report()` and
   the health endpoint — no longer load every run into memory: uptime is two counts and the p95 is
   one row read at its nearest-rank offset, with the same results.
+- An escalation policy with a threshold below 1 (`[0 => 'owner']`) or a list-style policy
+  (`['owner', 'team']`) is refused with `InvalidHealthCheck` by `escalate()` on a monitor or an
+  inline check and by `ScheduleHealthCheckData`; such a group could never be paged, and while the
+  policy was set the default group was not notified either.
 
 ## 1.0.1 - 2026-10-04
 

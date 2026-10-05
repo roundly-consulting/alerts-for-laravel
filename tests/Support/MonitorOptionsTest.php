@@ -63,3 +63,9 @@ it('coerces non-array level channel entries away', function () {
 
     expect($options->notifyViaLevels())->toBe([3 => ['slack']]);
 });
+
+it('accepts a policy keyed by thresholds of at least one and refuses any other key', function () {
+    expect(MonitorOptions::validateEscalation([1 => 'owner', 3 => 'team']))->toBe([1 => 'owner', 3 => 'team'])
+        ->and(fn () => MonitorOptions::validateEscalation(['owner' => 'team']))
+        ->toThrow(RoundlyConsulting\Alerts\Exceptions\InvalidHealthCheck::class, 'Escalation threshold [owner]');
+});
