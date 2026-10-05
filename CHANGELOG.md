@@ -55,6 +55,10 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
   (`['owner', 'team']`) is refused with `InvalidHealthCheck` by `escalate()` on a monitor or an
   inline check and by `ScheduleHealthCheckData`; such a group could never be paged, and while the
   policy was set the default group was not notified either.
+- A monitor `timeout()` that a check swallows is still reported as a timeout: the built-in
+  checks' `catch (Throwable)` used to turn it into "unreachable" without `timed_out_after`, and a
+  check that caught it and retried could overrun its budget and still report `ok`. A check that
+  catches the timeout now fails with the timeout message and `timed_out_after` in its meta.
 
 ## 1.0.1 - 2026-10-04
 

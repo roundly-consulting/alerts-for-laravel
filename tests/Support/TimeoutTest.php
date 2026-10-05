@@ -103,3 +103,38 @@ it('leaves a sooner worker deadline in charge of the check', function () {
         ->and($after)->toBeLessThanOrEqual(3)
         ->and($after)->toBeGreaterThan(0);
 })->skip(fn () => ! Timeout::supportsHardAbort(), 'ext-pcntl is not available.');
+
+it('reports a timeout the callback caught and retried past', function () {
+    $attempts = 0;
+
+    expect(function () use (&$attempts): void {
+        Timeout::run(1, 'retrying', function () use (&$attempts): string {
+            // A host check's own retry loop swallows the alarm's exception and goes again.
+            while (true) {
+                $attempts++;
+
+                try {
+                    usleep(1_200_000);
+
+                    return 'ok';
+                } catch (Throwable) {
+                    continue;
+                }
+            }
+        });
+    })->toThrow(CheckTimedOut::class, 'Health check [retrying] timed out after 1s.');
+
+    expect($attempts)->toBe(2);
+})->skip(fn () => ! Timeout::supportsHardAbort(), 'ext-pcntl is not available.');
+
+it('reports a timeout the callback caught before failing some other way', function () {
+    expect(fn () => Timeout::run(1, 'swallowed', function (): never {
+        try {
+            usleep(1_500_000);
+        } catch (CheckTimedOut) {
+            // swallowed by a broad catch in the check
+        }
+
+        throw new RuntimeException('connection reset');
+    }))->toThrow(CheckTimedOut::class, 'Health check [swallowed] timed out after 1s.');
+})->skip(fn () => ! Timeout::supportsHardAbort(), 'ext-pcntl is not available.');

@@ -2,12 +2,19 @@
 
 declare(strict_types=1);
 
+use Illuminate\Cache\ArrayStore;
 use Illuminate\Cache\Events\KeyWritten;
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Notification;
+use RoundlyConsulting\Alerts\Actions\RunHealthCheckAction;
 use RoundlyConsulting\Alerts\Checks\CacheCheck;
 use RoundlyConsulting\Alerts\Enums\Status;
+use RoundlyConsulting\Alerts\Facades\Health;
+use RoundlyConsulting\Alerts\Support\MonitorOptions;
+use RoundlyConsulting\Alerts\Support\Timeout;
+use RoundlyConsulting\Alerts\Tests\Models\Team;
 
 it('passes when the cache round-trips a value', function () {
     $result = CacheCheck::make()->check();
@@ -69,3 +76,27 @@ it('keeps overlapping runs from reading each other\'s sentinel', function () {
         ->and($written)->toHaveCount(2)
         ->and(collect($written)->filter(fn (string $key): bool => Cache::store('array')->has($key))->all())->toBe([]);
 });
+
+it('reports a store that outlasts the monitor timeout as timed out, not unreachable', function () {
+    Notification::fake();
+
+    Cache::extend('slow', fn () => Cache::repository(new class extends ArrayStore
+    {
+        public function put($key, $value, $seconds)
+        {
+            sleep(3);
+
+            return parent::put($key, $value, $seconds);
+        }
+    }));
+    config()->set('cache.stores.slow', ['driver' => 'slow']);
+
+    Health::check(CacheCheck::make('slow'));
+    $healthCheck = createHealthCheckWithNotifiable(Team::create(), 'cache_check', meta: [MonitorOptions::TIMEOUT => 1]);
+
+    $result = app(RunHealthCheckAction::class)->execute($healthCheck);
+
+    expect($result->status)->toBe(Status::Failed)
+        ->and($result->message)->toBe('Health check [cache_check] timed out after 1s.')
+        ->and($result->meta['timed_out_after'] ?? null)->toBe(1);
+})->skip(fn () => ! Timeout::supportsHardAbort(), 'ext-pcntl is not available.');
