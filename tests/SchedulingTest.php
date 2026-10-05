@@ -57,3 +57,18 @@ it('does not schedule when the gate is disabled', function () {
 
     expect(alertCommandFrom($schedule))->toBeNull();
 });
+
+it('runs the command on one server with a short overlap lock', function () {
+    config()->set('alerts.schedule.frequency', 'everyMinute');
+
+    $schedule = new Schedule;
+    (new AlertsServiceProvider(app()))->scheduleCommand($schedule);
+
+    $event = alertCommandFrom($schedule);
+
+    // Several scheduler hosts must not each queue every due check, and a scheduler killed
+    // mid-run must not hold the overlap lock (and with it, all monitoring) for a day.
+    expect($event?->onOneServer)->toBeTrue()
+        ->and($event?->withoutOverlapping)->toBeTrue()
+        ->and($event?->expiresAt)->toBeLessThanOrEqual(5);
+});

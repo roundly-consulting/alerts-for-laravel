@@ -27,6 +27,10 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
   falls between two ticks (`everyFiveMinutes` never ran `7 * * * *`, `everyOddHour` never ran
   `@daily`): `Health::runDue()` remembers its last tick in the cache and queues every check that
   came due since, once. `HealthCheck::isDue()` takes an optional `$since` for the same window.
+- The auto-scheduled `alerts:perform-health-checks` now runs `onOneServer()` with a 5-minute
+  overlap lock: several scheduler hosts no longer queue every due check once each (which tripped
+  `failAfter`, `recoverAfter` and escalation early), and a scheduler killed mid-run no longer
+  stops monitoring for up to 24 hours.
 
 ## 1.0.1 - 2026-10-04
 

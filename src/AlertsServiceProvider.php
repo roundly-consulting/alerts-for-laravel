@@ -60,11 +60,21 @@ final class AlertsServiceProvider extends PackageServiceProvider
         $this->registerCheckList();
     }
 
+    /**
+     * On one server: with the scheduler on several hosts, each would otherwise queue every
+     * due check, and the relative failure counters would trip failAfter / recoverAfter /
+     * escalation that many times too early. The overlap lock expires after five minutes —
+     * the command only queues jobs — so a scheduler killed mid-run cannot hold it, and with
+     * it all monitoring, for the default 24 hours.
+     */
     public function scheduleCommand(Schedule $schedule): void
     {
         $frequency = AlertsConfig::scheduleFrequency();
 
-        $schedule->command('alerts:perform-health-checks')->withoutOverlapping()->{$frequency}();
+        $schedule->command('alerts:perform-health-checks')
+            ->withoutOverlapping(5)
+            ->onOneServer()
+            ->{$frequency}();
     }
 
     /**
