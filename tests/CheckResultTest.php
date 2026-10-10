@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use RoundlyConsulting\Alerts\CheckResult;
 use RoundlyConsulting\Alerts\Enums\Status;
-use RuntimeException;
 
 it('creates instance from ok static method', function () {
     $result = CheckResult::ok('Everything ok', ['meta' => true]);
