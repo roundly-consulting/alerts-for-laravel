@@ -24,6 +24,15 @@ use RoundlyConsulting\Testing\Database\DriverMatrix;
 $migrations = __DIR__.'/../../database/migrations';
 
 /**
+ * The create migrations reversed (children before their parent), the additive ones kept last.
+ */
+$childBeforeParent = function (array $files): array {
+    $creates = array_values(array_filter($files, fn (string $file): bool => str_contains($file, '_create_')));
+
+    return [...array_reverse($creates), ...array_values(array_diff($files, $creates))];
+};
+
+/**
  * M — the structural pin, and the only one of these that catches a broken order on SQLite.
  *
  * `foreignKeys: 2` is what stops it passing over an empty parse: the count is pinned, so a
@@ -64,9 +73,11 @@ it('applies its migrations on postgres', function () use ($migrations): void {
  * R's negative control — the half that makes the one above mean something. A green FK test
  * proves nothing until you have watched the engine *reject* the broken order (forms #28).
  *
- * This is adoptable here precisely because alerts has FK edges: reverse the four files and
- * `create_alerts_table` runs before `create_health_checks_table`, so Postgres must refuse
- * with `relation "health_checks" does not exist`. Verified non-vacuous by pointing it at
+ * This is adoptable here precisely because alerts has FK edges: reverse the four create
+ * migrations and `create_alerts_table` runs before `create_health_checks_table`, so Postgres
+ * must refuse with `relation "health_checks" does not exist`. The 1.2 `add_*` migrations stay
+ * at the end: reversed, they would run first and fail on a missing table — a refusal that
+ * proves nothing about the foreign keys. Verified non-vacuous by pointing it at
  * the sqlite connection, where it does not quietly pass but **fails loudly** — "the engine
  * ACCEPTED a deliberately broken migration order" — which is why it is gated on a real
  * connection rather than the default one.
@@ -75,11 +86,8 @@ it('applies its migrations on postgres', function () use ($migrations): void {
  * the reversed list and the assertion fails by design. Alerts is the row in this batch that
  * has something to refuse.)
  */
-it('rejects a child-before-parent order on postgres', function () use ($migrations): void {
-    expect($migrations)->toRejectBrokenOrderOnConnection(
-        fn (array $files): array => array_reverse($files),
-        'pgsql',
-    );
+it('rejects a child-before-parent order on postgres', function () use ($migrations, $childBeforeParent): void {
+    expect($migrations)->toRejectBrokenOrderOnConnection($childBeforeParent, 'pgsql');
 })->skip(fn (): bool => ! test()->connectionAvailable('pgsql'), 'no postgres connection available');
 
 /**
@@ -91,11 +99,8 @@ it('applies its migrations on mysql', function () use ($migrations): void {
     expect($migrations)->toApplyOnConnection('mysql', migrations: 6);
 })->skip(fn (): bool => ! test()->connectionAvailable('mysql'), 'no mysql connection available');
 
-it('rejects a child-before-parent order on mysql', function () use ($migrations): void {
-    expect($migrations)->toRejectBrokenOrderOnConnection(
-        fn (array $files): array => array_reverse($files),
-        'mysql',
-    );
+it('rejects a child-before-parent order on mysql', function () use ($migrations, $childBeforeParent): void {
+    expect($migrations)->toRejectBrokenOrderOnConnection($childBeforeParent, 'mysql');
 })->skip(fn (): bool => ! test()->connectionAvailable('mysql'), 'no mysql connection available');
 
 /**
