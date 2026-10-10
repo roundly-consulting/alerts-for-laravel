@@ -286,7 +286,7 @@ final class HealthFake extends HealthManager
         $id = $this->scheduleOf($row);
 
         if ($diff !== [] && $id !== null) {
-            $diff['identity_hash'] = $this->movedIdentity($id, $row, $settings);
+            $diff['identity_hash'] = $this->movedIdentity($id, $row, $settings, array_key_exists('meta', $diff));
         }
 
         $this->reconfigured[] = ['key' => $row->health_check, 'notifiable' => $this->identify($notifiable)];
@@ -771,20 +771,27 @@ final class HealthFake extends HealthManager
     }
 
     /**
-     * The identity a reconfigured schedule moves to, refusing one another schedule holds.
+     * The identity a reconfigured schedule moves to, refusing one another schedule holds. For a
+     * check that is not registered it is kept while the meta stays and given up when it changes,
+     * as the real reconfigure does.
      *
      * @param  array<string, mixed>  $settings
      *
      * @throws ScheduleConflict
      */
-    private function movedIdentity(string $id, HealthCheck $row, array $settings): ?string
+    private function movedIdentity(string $id, HealthCheck $row, array $settings, bool $metaChanged): ?string
     {
         $check = $this->find($row->health_check);
-        $current = $this->schedules[$id]['identity'];
 
         if ($check === null) {
-            return $current;
+            if ($metaChanged) {
+                $this->schedules[$id]['identity'] = null;
+            }
+
+            return $this->schedules[$id]['identity'];
         }
+
+        $current = $this->schedules[$id]['identity'];
 
         $uniqueBy = $check->uniqueBy();
 

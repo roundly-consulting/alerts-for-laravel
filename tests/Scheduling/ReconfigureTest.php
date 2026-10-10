@@ -176,3 +176,31 @@ it('keeps the identity of a row whose check is not registered here', function ()
     expect($row->fresh()?->identity_hash)->toBe($hash)
         ->and($row->fresh()?->max_attempts)->toBe(4);
 });
+
+it('gives up the identity of a row whose check is not registered here once its meta moves', function (): void {
+    $row = HealthCheck::query()->findOrFail($this->row->getKey());
+
+    $registry = new ReflectionProperty(HealthManager::class, 'checks');
+    $manager = app(HealthManager::class);
+    $checks = $registry->getValue($manager);
+    $registry->setValue($manager, []);
+
+    Health::for($this->team)->reconfigure($row, new ReconfigureHealthCheckData(meta: ['service' => 'web']));
+
+    $registry->setValue($manager, $checks);
+
+    // A kept identity would still say `service: api`, and the next api schedule would take the web row over.
+    $api = Health::for($this->team)->schedule(new ScheduleHealthCheckData(check: ServiceCheck::class, meta: ['service' => 'api']));
+
+    expect($row->fresh()?->identity_hash)->toBeNull()
+        ->and($row->fresh()?->meta['service'] ?? null)->toBe('web')
+        ->and($api->getKey())->not->toBe($row->getKey())
+        ->and(HealthCheck::query()->count())->toBe(2);
+
+    // The moved row is adopted again by the first schedule of its new identity.
+    $web = Health::for($this->team)->schedule(new ScheduleHealthCheckData(check: ServiceCheck::class, meta: ['service' => 'web']));
+
+    expect($web->getKey())->toBe($row->getKey())
+        ->and($web->identity_hash)->not->toBeNull()
+        ->and(HealthCheck::query()->count())->toBe(2);
+});

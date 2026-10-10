@@ -54,7 +54,9 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
   notifiable's row is refused with `InvalidHealthCheck`, and moving a `uniqueBy()` schedule onto
   the identity of another live schedule throws the new `ScheduleConflict` (a `RuntimeException`
   naming the check, the row and the identity's meta keys — never their values; map it to 409).
-  The fake records it: `assertReconfigured(string $check, ?Model $notifiable = null)` /
+  In a process where the check is not registered the identity cannot be recomputed: the row keeps
+  it while its meta stays and gives it up when the meta changes (the next `schedule()` of the new
+  identity adopts the row). The fake records it: `assertReconfigured(string $check, ?Model $notifiable = null)` /
   `assertNothingReconfigured()`.
 - A new publish-only migration, `add_identity_hash_to_health_checks_table`, adds the unique
   `health_checks.identity_hash` column a `uniqueBy()` schedule upserts on (no backfill).

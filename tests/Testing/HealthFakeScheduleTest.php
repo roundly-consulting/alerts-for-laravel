@@ -9,6 +9,7 @@ use RoundlyConsulting\Alerts\Exceptions\InvalidHealthCheck;
 use RoundlyConsulting\Alerts\Exceptions\ScheduleConflict;
 use RoundlyConsulting\Alerts\Facades\Health;
 use RoundlyConsulting\Alerts\HealthCheck;
+use RoundlyConsulting\Alerts\HealthManager;
 use RoundlyConsulting\Alerts\Testing\HealthFake;
 use RoundlyConsulting\Alerts\Tests\HealthChecks\ExampleHealthCheck;
 use RoundlyConsulting\Alerts\Tests\HealthChecks\ServiceCheck;
@@ -204,3 +205,25 @@ it('gives the real manager\'s schedule outcome under the fake', function (Closur
         [true, 1],
     ],
 ]);
+
+it('gives up the in-memory identity of a schedule whose check is not registered once its meta moves', function (): void {
+    $fake = Health::fake();
+    $fake->register(new ServiceCheck);
+    $team = Team::create();
+
+    $row = Health::for($team)->monitor(ServiceCheck::class)->meta(['service' => 'api'])->save();
+
+    $registry = new ReflectionProperty(HealthManager::class, 'checks');
+    $checks = $registry->getValue($fake);
+    $registry->setValue($fake, []);
+
+    Health::for($team)->reconfigure($row, new ReconfigureHealthCheckData(meta: ['service' => 'web']));
+
+    $registry->setValue($fake, $checks);
+
+    Health::for($team)->monitor(ServiceCheck::class)->meta(['service' => 'api'])->save();
+
+    expect($row->identity_hash)->toBeNull()
+        ->and($row->meta)->toBe(['service' => 'web'])
+        ->and(Health::for($team)->monitors())->toHaveCount(2);
+});

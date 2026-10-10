@@ -49,7 +49,7 @@ final readonly class ReconfigureHealthCheckAction
         }
 
         $uniqueBy = $this->uniqueBy($row);
-        $hash = $this->identity($row, $uniqueBy, $settings);
+        $hash = $this->identity($row, $uniqueBy, $settings, $diff);
         $metaKeys = is_array($uniqueBy) ? $uniqueBy : [];
 
         if ($hash !== $row->identity_hash) {
@@ -77,8 +77,7 @@ final readonly class ReconfigureHealthCheckAction
     }
 
     /**
-     * The check's identity keys, or false when the check is not registered here — the row then
-     * keeps the identity it has.
+     * The check's identity keys, or false when the check is not registered here.
      *
      * @return list<string>|false|null
      */
@@ -90,13 +89,18 @@ final readonly class ReconfigureHealthCheckAction
     }
 
     /**
+     * The identity the row has after the change. For a check that is not registered here it
+     * cannot be recomputed: it is kept while the meta it was read from stays, and given up when
+     * the meta changes — the first `schedule()` of the new identity then adopts the row again.
+     *
      * @param  list<string>|false|null  $uniqueBy
      * @param  array<string, mixed>  $settings
+     * @param  array<string, mixed>  $diff
      */
-    private function identity(HealthCheck $row, array|false|null $uniqueBy, array $settings): ?string
+    private function identity(HealthCheck $row, array|false|null $uniqueBy, array $settings, array $diff): ?string
     {
         if ($uniqueBy === false) {
-            return $row->identity_hash;
+            return array_key_exists('meta', $diff) ? null : $row->identity_hash;
         }
 
         if ($uniqueBy === null || $settings['frequency'] === null || $row->trashed()) {
