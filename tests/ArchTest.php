@@ -8,6 +8,7 @@ use RoundlyConsulting\Alerts\Check;
 use RoundlyConsulting\Alerts\HealthCheck;
 use RoundlyConsulting\Alerts\HealthCheckRun;
 use RoundlyConsulting\Alerts\HealthManager;
+use RoundlyConsulting\Alerts\Support\Identity;
 use RoundlyConsulting\Testing\Arch\ArchPresets;
 
 /**
@@ -54,8 +55,13 @@ ArchPresets::swappableModelsAreNotFinal([
 /**
  * Alerts does no cryptography; the ban is a standing guard against a check signature or
  * silence token being hand-rolled here rather than in crypto-for-laravel.
+ *
+ * One exemption, scoped to the one class: Support\Identity digests a silence's (and a
+ * schedule's) identity with sha256 for the unique `identity_hash` index. Nothing is signed or
+ * kept secret — the input is readable from the row itself — so it is an index key, not a
+ * crypto primitive. The preset pins that the exemption still silences something.
  */
-ArchPresets::noLocalCryptoPrimitives('RoundlyConsulting\Alerts');
+ArchPresets::noLocalCryptoPrimitives('RoundlyConsulting\Alerts', [Identity::class]);
 
 /**
  * Adopted rather than rejected as jwt rejected it: alerts has exactly the shape the preset

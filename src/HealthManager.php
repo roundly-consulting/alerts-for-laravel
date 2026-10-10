@@ -15,6 +15,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Route as RouteFacade;
 use RoundlyConsulting\Alerts\Actions\BuildHealthReportAction;
 use RoundlyConsulting\Alerts\Actions\MuteAlertsAction;
+use RoundlyConsulting\Alerts\Actions\PruneAlertSilencesAction;
 use RoundlyConsulting\Alerts\Actions\PruneHealthCheckRunsAction;
 use RoundlyConsulting\Alerts\Actions\RunDueHealthChecksAction;
 use RoundlyConsulting\Alerts\Actions\RunHealthCheckNowAction;
@@ -33,6 +34,7 @@ use RoundlyConsulting\Alerts\Support\HealthCheckModel;
 use RoundlyConsulting\Alerts\Support\NotifiableHealth;
 use RoundlyConsulting\Alerts\Support\PendingCheck;
 use RoundlyConsulting\Alerts\Support\Silences;
+use RoundlyConsulting\Alerts\Support\SilenceSnapshot;
 use RoundlyConsulting\PackageToolkit\Support\Config;
 
 /**
@@ -357,5 +359,25 @@ class HealthManager
         }
 
         return $query->oldest('id')->get();
+    }
+
+    /**
+     * @internal the body of `silences()->snapshot()` and `silences()->covers()`
+     */
+    public function silenceSnapshotFor(CarbonInterface $at): SilenceSnapshot
+    {
+        if (! Config::boolean('alerts.silence', true)) {
+            return new SilenceSnapshot;
+        }
+
+        return new SilenceSnapshot(AlertSilenceModel::query()->active($at)->oldest('id')->get());
+    }
+
+    /**
+     * @internal the body of `silences()->prune()`
+     */
+    public function pruneSilencesFor(?int $days = null): int
+    {
+        return $this->container->make(PruneAlertSilencesAction::class)->execute($days);
     }
 }

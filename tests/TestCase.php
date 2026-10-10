@@ -22,7 +22,7 @@ abstract class TestCase extends PackageTestCase
     }
 
     /**
-     * The four alerts migrations, named by provider class (never by filename), plus the
+     * The alerts migrations, named by provider class (never by filename), plus the
      * host-owned fixture tables the notifiables live in.
      *
      * @return list<class-string<ServiceProvider>|string>

@@ -129,12 +129,17 @@ return [
     | maintenance via Health::silences()->mute(). Runs are still recorded while
     | muted. Set the master switch to false to ignore every silence.
     | `silence-model` is the Eloquent model used to persist mute records.
+    | `silence-retention` (a whole number of days, at least 1 — anything else
+    | throws) is how long an ended silence is kept: `alerts:prune-silences`,
+    | auto-scheduled daily while silences are on, deletes the older ones.
     |
     */
 
     'silence' => env('ALERTS_SILENCE', true),
 
     'silence-model' => AlertSilence::class,
+
+    'silence-retention' => env('ALERTS_SILENCE_RETENTION', 7),
 
     /*
     |--------------------------------------------------------------------------

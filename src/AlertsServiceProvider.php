@@ -9,6 +9,7 @@ use RoundlyConsulting\Alerts\Commands\HealthCheckStatus;
 use RoundlyConsulting\Alerts\Commands\ListChecks;
 use RoundlyConsulting\Alerts\Commands\PerformHealthChecks;
 use RoundlyConsulting\Alerts\Commands\PruneRuns;
+use RoundlyConsulting\Alerts\Commands\PruneSilences;
 use RoundlyConsulting\Alerts\Commands\RunCheck;
 use RoundlyConsulting\Alerts\Support\AlertModel;
 use RoundlyConsulting\Alerts\Support\AlertsConfig;
@@ -37,6 +38,7 @@ final class AlertsServiceProvider extends PackageServiceProvider
                 ListChecks::class,
                 RunCheck::class,
                 PruneRuns::class,
+                PruneSilences::class,
             ])
             ->contributesToAbout(fn (): array => $this->aboutSection());
     }
@@ -88,6 +90,15 @@ final class AlertsServiceProvider extends PackageServiceProvider
     }
 
     /**
+     * Ended silences are pruned while silences are on — `mute()` writes one row per identity,
+     * but every window that ever ended would otherwise stay in the table.
+     */
+    public function scheduleSilencePrune(Schedule $schedule): void
+    {
+        $schedule->command('alerts:prune-silences')->daily();
+    }
+
+    /**
      * A monitoring package's config names the host's own topology: a registered check
      * names what it watches (a connection, a disk, an internal URL) and an escalation
      * policy names the groups it pages. Neither ever renders — checks report as a
@@ -106,7 +117,7 @@ final class AlertsServiceProvider extends PackageServiceProvider
             'Registered checks' => $this->registeredChecks(),
             'Scheduling' => $this->scheduling(),
             'History' => $this->history(),
-            'Silences' => Config::boolean('alerts.silence', true) ? 'ON' : 'OFF',
+            'Silences' => $this->silences(),
             'Default escalation' => $this->defaultEscalation(),
             'Health endpoint' => $this->healthEndpoint(),
         ];
@@ -149,6 +160,15 @@ final class AlertsServiceProvider extends PackageServiceProvider
         return sprintf('ON (%d day retention)', AlertsConfig::retentionDays());
     }
 
+    private function silences(): string
+    {
+        if (! Config::boolean('alerts.silence', true)) {
+            return 'OFF';
+        }
+
+        return sprintf('ON (%d day retention)', AlertsConfig::silenceRetentionDays());
+    }
+
     private function defaultEscalation(): string
     {
         $policy = config('alerts.escalation', []);
@@ -167,6 +187,10 @@ final class AlertsServiceProvider extends PackageServiceProvider
 
             if (Config::boolean('alerts.history.enabled', true)) {
                 $this->schedulePrune($schedule);
+            }
+
+            if (Config::boolean('alerts.silence', true)) {
+                $this->scheduleSilencePrune($schedule);
             }
         });
     }

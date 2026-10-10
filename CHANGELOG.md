@@ -6,8 +6,38 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
 
 ## Unreleased
 
+### Added
+
+- `Health::silences()->snapshot(?CarbonInterface $at = null)` returns a `SilenceSnapshot`: every
+  silence in force at that moment, loaded in one query, whose `covers(HealthCheck $row)` tells
+  whether a row is muted by the same rule the run pipeline applies (the row's check key, one of
+  its effective tags or `*`; global or scoped to the row's own notifiable). `isEmpty()` says
+  whether anything is muted at all, and `Health::silences()->covers($row)` is the one-row
+  shortcut. `Health::fake()` answers both from its in-memory silences.
+- `Health::silences()->prune(?int $days = null)` (`PruneAlertSilencesAction`) and the
+  `alerts:prune-silences {--days=}` command delete silences that ended more than
+  `alerts.silence-retention` days ago (`ALERTS_SILENCE_RETENTION`, default `7`, a whole number of
+  at least 1 — anything else throws, naming the key). Open-ended, running and future silences are
+  never touched; a retention below 1 day throws `InvalidRetention`. The command is scheduled daily
+  while `alerts.silence` is on, and `about` shows the retention (`Silences: ON (7 day retention)`).
+  The fake records it: `assertSilencesPruned(?int $days = null)` / `assertNoSilencesPruned()`.
+- A new publish-only migration, `add_identity_hash_to_alert_silences_table`, adds the unique
+  `alert_silences.identity_hash` column `mute()` upserts on.
+
 ### Changed
 
+- `Health::silences()->mute()` now updates the silence with the same key and scope (global, or
+  the same notifiable) instead of inserting another row: muting again replaces its `reason` and
+  `ends_at`, so it extends or shortens the window, and returns that one row. A global and a scoped
+  silence of one key stay distinct, and two concurrent mutes still leave one row. A silence a host
+  writes straight through the model carries no identity and is never merged. `Health::fake()`
+  keeps one in-memory silence per identity the same way (every call is still recorded for
+  `assertMuted()`). Upgrade: run `php artisan vendor:publish --tag=alerts-migrations` and
+  `php artisan migrate`. The migration collapses the immediate silences already stacked per key
+  and scope into one — the newest row, open-ended if any of them was, else until the latest end,
+  with the newest reason — so what is muted does not change. If you edited a published alerts
+  migration, `vendor:publish` no longer recognises it and would publish a second copy of the
+  create migrations: copy the new migration files into `database/migrations` by hand instead.
 - Maintenance: CI runs the whole suite on MySQL 8 as well as PostgreSQL, the two supported
   databases.
 

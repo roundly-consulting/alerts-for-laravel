@@ -9,7 +9,6 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\UniqueConstraintViolationException;
 use RoundlyConsulting\Alerts\Alert;
-use RoundlyConsulting\Alerts\AlertSilence;
 use RoundlyConsulting\Alerts\Check;
 use RoundlyConsulting\Alerts\CheckResult;
 use RoundlyConsulting\Alerts\Enums\Status;
@@ -19,10 +18,10 @@ use RoundlyConsulting\Alerts\Events\HealthCheckRecovered;
 use RoundlyConsulting\Alerts\Exceptions\InvalidNotifiableForHealthCheck;
 use RoundlyConsulting\Alerts\HealthCheck;
 use RoundlyConsulting\Alerts\Support\AlertModel;
-use RoundlyConsulting\Alerts\Support\AlertSilenceModel;
 use RoundlyConsulting\Alerts\Support\HealthCheckRunModel;
 use RoundlyConsulting\Alerts\Support\MonitorOptions;
 use RoundlyConsulting\Alerts\Support\SafeCheck;
+use RoundlyConsulting\Alerts\Support\SilenceMatcher;
 use RoundlyConsulting\PackageToolkit\Support\Config;
 use Throwable;
 
@@ -263,17 +262,7 @@ final readonly class RunHealthCheckAction
             return false;
         }
 
-        $keys = array_values(array_unique([
-            $healthCheck->health_check,
-            ...$healthCheck->effectiveTags(),
-            ...$check->tags(),
-            AlertSilence::GLOBAL_KEY,
-        ]));
-
-        return AlertSilenceModel::query()
-            ->matching($keys, $healthCheck->notifiable)
-            ->active(now())
-            ->exists();
+        return SilenceMatcher::query($healthCheck, $check, now())->exists();
     }
 
     private function follow(Alert $alert, CheckResult $result, bool $muted): void

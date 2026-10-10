@@ -58,6 +58,16 @@ final class AlertsConfig
     }
 
     /**
+     * Days an ended silence is kept before `alerts:prune-silences` deletes it. At least one: a
+     * retention of 0 would delete every ended silence on the next daily prune, and a negative
+     * one silences that are still running.
+     */
+    public static function silenceRetentionDays(): int
+    {
+        return Config::integer('alerts.silence-retention', 7, min: 1);
+    }
+
+    /**
      * The scheduler method the perform command is registered with.
      */
     public static function scheduleFrequency(): string

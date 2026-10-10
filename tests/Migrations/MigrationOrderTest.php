@@ -8,7 +8,7 @@ use RoundlyConsulting\PackageToolkit\Enums\DatabaseDriver;
 use RoundlyConsulting\Testing\Database\DriverMatrix;
 
 /**
- * Alerts ships four migrations wired by two real foreign keys — `alerts.health_check_id`
+ * Alerts ships its migrations wired by two real foreign keys — `alerts.health_check_id`
  * and `health_check_runs.health_check_id`, both onto `health_checks`. Migrations are
  * publish-only and publishing preserves the source order, so that order has to be runnable
  * end to end from an empty database.
@@ -39,7 +39,7 @@ it('creates every foreign key target before the table that references it', funct
 /**
  * P — the publish-only guards. The fleet publishes migrations timestamped rather than
  * auto-loading them; doing both runs both copies and dies on a duplicate table (bug #5, on
- * three packages). `4` pins the file count so neither check can pass over an empty or
+ * three packages). The count pins the file count so neither check can pass over an empty or
  * relocated directory.
  */
 it('never auto-loads its migrations — the host publishes them', function (): void {
@@ -47,7 +47,7 @@ it('never auto-loads its migrations — the host publishes them', function (): v
 });
 
 it('publishes its migrations timestamp-injected into the host', function (): void {
-    expect(AlertsServiceProvider::class)->toPublishMigrationsTimestamped('alerts-migrations', 4);
+    expect(AlertsServiceProvider::class)->toPublishMigrationsTimestamped('alerts-migrations', 5);
 });
 
 /**
@@ -57,7 +57,7 @@ it('publishes its migrations timestamp-injected into the host', function (): voi
  * shipped order install.
  */
 it('applies its migrations on postgres', function () use ($migrations): void {
-    expect($migrations)->toApplyOnConnection('pgsql', migrations: 4);
+    expect($migrations)->toApplyOnConnection('pgsql', migrations: 5);
 })->skip(fn (): bool => ! test()->connectionAvailable('pgsql'), 'no postgres connection available');
 
 /**
@@ -88,7 +88,7 @@ it('rejects a child-before-parent order on postgres', function () use ($migratio
  * runs on the mysql leg.
  */
 it('applies its migrations on mysql', function () use ($migrations): void {
-    expect($migrations)->toApplyOnConnection('mysql', migrations: 4);
+    expect($migrations)->toApplyOnConnection('mysql', migrations: 5);
 })->skip(fn (): bool => ! test()->connectionAvailable('mysql'), 'no mysql connection available');
 
 it('rejects a child-before-parent order on mysql', function () use ($migrations): void {

@@ -19,10 +19,13 @@ use RoundlyConsulting\Alerts\Exceptions\InvalidRetention;
 use RoundlyConsulting\Alerts\HealthCheck;
 use RoundlyConsulting\Alerts\HealthManager;
 use RoundlyConsulting\Alerts\Status\HealthReport;
+use RoundlyConsulting\Alerts\Support\AlertsConfig;
 use RoundlyConsulting\Alerts\Support\AlertSilenceModel;
 use RoundlyConsulting\Alerts\Support\HealthCheckModel;
 use RoundlyConsulting\Alerts\Support\MonitorOptions;
 use RoundlyConsulting\Alerts\Support\SafeCheck;
+use RoundlyConsulting\Alerts\Support\SilenceMatcher;
+use RoundlyConsulting\Alerts\Support\SilenceSnapshot;
 use RoundlyConsulting\PackageToolkit\Support\Config;
 
 /**
@@ -92,6 +95,9 @@ final class HealthFake extends HealthManager
     /** @var list<int|null> */
     private array $pruned = [];
 
+    /** @var list<int|null> */
+    private array $prunedSilences = [];
+
     /**
      * @param  iterable<Check>  $checks  the checks already registered on the real manager
      */
@@ -140,7 +146,7 @@ final class HealthFake extends HealthManager
 
         $this->runs[] = $key;
 
-        $muted = $this->silenced([$key, ...$tags, AlertSilence::GLOBAL_KEY], $notifiable);
+        $muted = $this->covered($row ?? $this->onDemandRow($notifiable, $key), $instance);
 
         $outcome = $this->monitorFor($id, $scope, $key, $instance->name(), $tags)
             ->apply($result, $options, $muted);
@@ -266,7 +272,8 @@ final class HealthFake extends HealthManager
     }
 
     /**
-     * Records the mute and keeps the silence in memory (unsaved).
+     * Records the mute and keeps the silence in memory (unsaved) — one per identity, as the
+     * real upsert does: muting the same key and scope again updates that silence.
      */
     public function muteFor(
         string $key,
@@ -274,20 +281,28 @@ final class HealthFake extends HealthManager
         ?Model $notifiable = null,
         ?string $reason = null,
     ): AlertSilence {
+        $scope = $notifiable === null ? null : $this->identify($notifiable);
+
         $this->muted[] = [
             'key' => $key,
-            'notifiable' => $notifiable === null ? null : $this->identify($notifiable),
+            'notifiable' => $scope,
             'until' => $until,
             'reason' => $reason,
         ];
+
+        $window = ['reason' => $reason, 'starts_at' => null, 'ends_at' => $until];
+
+        foreach ($this->silences as $silence) {
+            if ($silence->key === $key && $silence->starts_at === null && $this->silenceScope($silence) === $scope) {
+                return $silence->forceFill($window);
+            }
+        }
 
         $silence = AlertSilenceModel::new()->forceFill([
             'key' => $key,
             'notifiable_type' => $notifiable?->getMorphClass(),
             'notifiable_id' => $notifiable?->getKey(),
-            'reason' => $reason,
-            'starts_at' => null,
-            'ends_at' => $until,
+            ...$window,
         ]);
 
         $this->silences[] = $silence;
@@ -329,6 +344,46 @@ final class HealthFake extends HealthManager
             fn (AlertSilence $silence): bool => $this->isActive($silence)
                 && ($scope === null || in_array($this->silenceScope($silence), [null, $scope], true)),
         )));
+    }
+
+    /**
+     * Built from the silences in memory, never the database.
+     */
+    public function silenceSnapshotFor(CarbonInterface $at): SilenceSnapshot
+    {
+        if (! Config::boolean('alerts.silence', true)) {
+            return new SilenceSnapshot;
+        }
+
+        return new SilenceSnapshot(array_filter(
+            $this->silences,
+            fn (AlertSilence $silence): bool => SilenceMatcher::isActive($silence, $at),
+        ));
+    }
+
+    /**
+     * Records the prune and drops the silences in memory that ended before the retention window.
+     */
+    public function pruneSilencesFor(?int $days = null): int
+    {
+        // Refused before it is recorded, as the real action refuses it before deleting.
+        if ($days !== null && $days < 1) {
+            throw InvalidRetention::silenceDays($days);
+        }
+
+        $this->prunedSilences[] = $days;
+
+        $cutoff = now()->subDays($days ?? AlertsConfig::silenceRetentionDays());
+
+        $kept = array_values(array_filter(
+            $this->silences,
+            fn (AlertSilence $silence): bool => $silence->ends_at === null || $silence->ends_at->greaterThanOrEqualTo($cutoff),
+        ));
+
+        $pruned = count($this->silences) - count($kept);
+        $this->silences = $kept;
+
+        return $pruned;
     }
 
     public function runDue(): int
@@ -476,6 +531,23 @@ final class HealthFake extends HealthManager
     }
 
     /**
+     * @param  int|null  $days  when given, the retention the silence prune was asked for
+     */
+    public function assertSilencesPruned(?int $days = null): void
+    {
+        PHPUnit::assertNotSame([], $this->prunedSilences, 'Silences were never pruned.');
+
+        if ($days !== null) {
+            PHPUnit::assertContains($days, $this->prunedSilences, "Silences were not pruned with [$days] day(s).");
+        }
+    }
+
+    public function assertNoSilencesPruned(): void
+    {
+        PHPUnit::assertSame([], $this->prunedSilences, 'Silences were pruned unexpectedly.');
+    }
+
+    /**
      * @param  list<string>  $keys
      */
     private function silenced(array $keys, ?Model $notifiable, ?string $scope = null): bool
@@ -501,10 +573,39 @@ final class HealthFake extends HealthManager
 
     private function isActive(AlertSilence $silence): bool
     {
-        $now = now();
+        return SilenceMatcher::isActive($silence, now());
+    }
 
-        return ($silence->starts_at === null || $silence->starts_at->lessThanOrEqualTo($now))
-            && ($silence->ends_at === null || $silence->ends_at->greaterThanOrEqualTo($now));
+    /**
+     * The runner's mute gate over the silences in memory.
+     */
+    private function covered(HealthCheck $row, Check $check): bool
+    {
+        if (! Config::boolean('alerts.silence', true)) {
+            return false;
+        }
+
+        foreach ($this->silences as $silence) {
+            if ($this->isActive($silence) && SilenceMatcher::covers($silence, $row, $check)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The on-demand row the real run-now would have seeded for the notifiable and check —
+     * unsaved: the fake never writes.
+     */
+    private function onDemandRow(Model $notifiable, string $key): HealthCheck
+    {
+        return HealthCheckModel::new()->forceFill([
+            'notifiable_type' => $notifiable->getMorphClass(),
+            'notifiable_id' => $notifiable->getKey(),
+            'health_check' => $key,
+            'frequency' => null,
+        ]);
     }
 
     private function silenceScope(AlertSilence $silence): ?string

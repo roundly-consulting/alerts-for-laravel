@@ -55,21 +55,24 @@ it('publishes every migration timestamped, in dependency order', function (): vo
         array_values($published),
     );
 
-    expect($names)->toHaveCount(4);
+    expect($names)->toHaveCount(5);
 
     foreach ($names as $name) {
-        expect($name)->toMatch('/^\d{4}_\d{2}_\d{2}_\d{6}_create_[a-z_]+_table\.php$/');
+        expect($name)->toMatch('/^\d{4}_\d{2}_\d{2}_\d{6}_(create|add)_[a-z_]+_table\.php$/');
     }
 
     // Publishing preserves the source order (one second per file), so a host creates
-    // `health_checks` before the two tables that carry a foreign key onto it.
+    // `health_checks` before the two tables that carry a foreign key onto it, and every
+    // table before the migration that alters it.
     $sorted = $names;
     sort($sorted);
 
     expect($sorted)->toBe($names)
         ->and($names[0])->toContain('create_health_checks_table')
         ->and($names[1])->toContain('create_alerts_table')
-        ->and($names[3])->toContain('create_health_check_runs_table');
+        ->and($names[2])->toContain('create_alert_silences_table')
+        ->and($names[3])->toContain('create_health_check_runs_table')
+        ->and($names[4])->toContain('add_identity_hash_to_alert_silences_table');
 });
 
 it('creates the schema when the published migrations are run', function (): void {
@@ -85,5 +88,6 @@ it('registers the package commands', function (): void {
         ->toContain('alerts:status')
         ->toContain('alerts:list')
         ->toContain('alerts:check')
-        ->toContain('alerts:prune-runs');
+        ->toContain('alerts:prune-runs')
+        ->toContain('alerts:prune-silences');
 });

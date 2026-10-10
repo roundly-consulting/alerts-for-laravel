@@ -22,6 +22,9 @@ use RoundlyConsulting\Alerts\Database\Factories\AlertSilenceFactory;
  * @property string|null $reason
  * @property CarbonInterface|null $starts_at
  * @property CarbonInterface|null $ends_at
+ * @property string|null $identity_hash the key + scope hash `mute()` upserts on; null for a
+ *                                      window with `starts_at` set or a row written straight
+ *                                      through the model
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
  *

@@ -109,6 +109,19 @@ it('honours a host silence model through the mute flow', function (): void {
     ]);
 });
 
+it('keeps one host silence per identity and prunes through the host model', function (): void {
+    $first = Health::silences()->mute('example_health_check', until: now()->addHour());
+    $second = Health::silences()->mute('example_health_check', until: now()->addDay());
+
+    CustomAlertSilence::query()->create(['key' => 'old', 'ends_at' => now()->subDays(30)]);
+
+    expect($second)->toBeInstanceOf(CustomAlertSilence::class)
+        ->and($second->getKey())->toBe($first->getKey())
+        ->and(Health::silences()->prune())->toBe(1)
+        ->and(CustomAlertSilence::query()->count())->toBe(1)
+        ->and(Health::silences()->snapshot()->isEmpty())->toBeFalse();
+});
+
 it('resolves every configured model', function (): void {
     expect(HealthCheckModel::class())->toBe(CustomHealthCheck::class)
         ->and(AlertModel::class())->toBe(CustomAlert::class)

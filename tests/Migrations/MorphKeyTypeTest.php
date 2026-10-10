@@ -71,7 +71,9 @@ $pgsqlOnly = fn (): bool => DriverMatrix::driver() !== 'pgsql';
 
 it('emits the frozen bigint morph schema byte-for-byte', function (): void {
     // The harness has already migrated on the default (bigint) config. This is the shipped
-    // schema — the sweep's core safety property is that it must never drift.
+    // schema — the sweep's core safety property is that it must never drift. The shipped
+    // create migrations are frozen; 1.2's additive migrations append the `identity_hash`
+    // columns at the end, which is all that may ever change here.
     expect(emittedAlertsTable('health_checks'))->toBe(
         'CREATE TABLE "health_checks" ("id" integer primary key autoincrement not null, '
         .'"notifiable_type" varchar not null, "notifiable_id" integer not null, '
@@ -95,7 +97,7 @@ it('emits the frozen bigint morph schema byte-for-byte', function (): void {
         'CREATE TABLE "alert_silences" ("id" integer primary key autoincrement not null, '
         .'"key" varchar not null, "notifiable_type" varchar, "notifiable_id" integer, '
         .'"reason" varchar, "starts_at" datetime, "ends_at" datetime, '
-        .'"created_at" datetime, "updated_at" datetime)'
+        .'"created_at" datetime, "updated_at" datetime, "identity_hash" varchar)'
     );
 })->skip($sqliteOnly, 'sqlite_master is the sqlite catalog');
 
