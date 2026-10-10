@@ -2,11 +2,18 @@
 
 declare(strict_types=1);
 
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Support\Facades\Exceptions;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Storage;
 use RoundlyConsulting\Alerts\Alert;
+use RoundlyConsulting\Alerts\Checks\CacheCheck;
 use RoundlyConsulting\Alerts\Checks\DatabaseCheck;
+use RoundlyConsulting\Alerts\Checks\HttpPingCheck;
+use RoundlyConsulting\Alerts\Checks\QueueCheck;
+use RoundlyConsulting\Alerts\Checks\StorageCheck;
 use RoundlyConsulting\Alerts\Enums\Status;
 use RoundlyConsulting\Alerts\Exceptions\CheckTimedOut;
 use RoundlyConsulting\Alerts\Facades\Health;
@@ -94,6 +101,42 @@ it('keeps a built-in check\'s own message but not the error it caught', function
         ->and($run->meta['connection'] ?? null)->toBe('missing-connection')
         ->and(array_key_exists('error', $run->meta ?? []))->toBe($details);
 })->with(['default' => false, 'opted in' => true]);
+
+it('reports the error a built-in check caught, since it is not stored either', function (Closure $check): void {
+    Exceptions::fake();
+
+    $result = $check();
+
+    expect($result->status)->toBe(Status::Failed)
+        ->and($result->meta['error'] ?? null)->toBeString()->not->toBe('');
+
+    Exceptions::assertReportedCount(1);
+
+    expect(Exceptions::reported()[0]->getMessage())->toBe($result->meta['error']);
+})->with([
+    'database' => [fn () => DatabaseCheck::make('missing-connection')->check()],
+    'cache' => [fn () => CacheCheck::make('missing-store')->check()],
+    'queue' => [fn () => QueueCheck::make('missing')->check()],
+    'storage' => [function () {
+        Storage::shouldReceive('disk->path')->andThrow(new RuntimeException('no disk'));
+
+        return StorageCheck::make('broken')->check();
+    }],
+    'http' => [function () {
+        Http::fake(fn () => throw new ConnectionException('connection refused'));
+
+        return HttpPingCheck::make('https://internal.example.test')->check();
+    }],
+]);
+
+it('never reports a timeout a built-in check caught', function (): void {
+    Exceptions::fake();
+    Http::fake(fn () => throw CheckTimedOut::after('ping', 1));
+
+    expect(HttpPingCheck::make('https://internal.example.test')->check()->status)->toBe(Status::Failed);
+
+    Exceptions::assertNothingReported();
+});
 
 it('keeps the timeout text, its budget and its class, but not its frames', function (): void {
     Exceptions::fake();

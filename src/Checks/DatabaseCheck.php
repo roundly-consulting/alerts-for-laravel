@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\DB;
 use RoundlyConsulting\Alerts\Check;
 use RoundlyConsulting\Alerts\CheckResult;
 use RoundlyConsulting\Alerts\Notifications\HealthCheckFailedNotification;
+use RoundlyConsulting\Alerts\Support\SafeCheck;
 use Throwable;
 
 /**
@@ -40,6 +41,8 @@ final class DatabaseCheck extends Check
         try {
             DB::connection($connection)->getPdo();
         } catch (Throwable $e) {
+            SafeCheck::report($e);
+
             return CheckResult::failed(
                 (string) __('alerts::checks.database_unreachable', ['connection' => $connection]),
                 ['connection' => $connection, 'error' => $e->getMessage()],

@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Storage;
 use RoundlyConsulting\Alerts\Check;
 use RoundlyConsulting\Alerts\CheckResult;
 use RoundlyConsulting\Alerts\Notifications\HealthCheckFailedNotification;
+use RoundlyConsulting\Alerts\Support\SafeCheck;
 use Throwable;
 
 /**
@@ -60,6 +61,8 @@ final class StorageCheck extends Check
             $path = (string) Storage::disk($disk)->path('');
             $free = disk_free_space($path);
         } catch (Throwable $e) {
+            SafeCheck::report($e);
+
             return CheckResult::failed(
                 (string) __('alerts::checks.storage_unreadable', ['disk' => $disk]),
                 ['disk' => $disk, 'error' => $e->getMessage()],

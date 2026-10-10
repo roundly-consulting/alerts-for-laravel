@@ -10,6 +10,7 @@ use Illuminate\Support\Str;
 use RoundlyConsulting\Alerts\Check;
 use RoundlyConsulting\Alerts\CheckResult;
 use RoundlyConsulting\Alerts\Notifications\HealthCheckFailedNotification;
+use RoundlyConsulting\Alerts\Support\SafeCheck;
 use Throwable;
 
 /**
@@ -50,6 +51,8 @@ final class CacheCheck extends Check
             $read = $cache->get($key);
             $cache->forget($key);
         } catch (Throwable $e) {
+            SafeCheck::report($e);
+
             return CheckResult::failed(
                 (string) __('alerts::checks.cache_unreachable', ['store' => $store]),
                 ['store' => $store, 'error' => $e->getMessage()],

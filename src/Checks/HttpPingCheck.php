@@ -10,6 +10,7 @@ use RoundlyConsulting\Alerts\Check;
 use RoundlyConsulting\Alerts\CheckResult;
 use RoundlyConsulting\Alerts\HealthCheck;
 use RoundlyConsulting\Alerts\Notifications\HealthCheckFailedNotification;
+use RoundlyConsulting\Alerts\Support\SafeCheck;
 use Throwable;
 
 /**
@@ -64,6 +65,8 @@ final class HttpPingCheck extends Check
         try {
             $response = Http::timeout($this->timeout)->get($this->url);
         } catch (Throwable $e) {
+            SafeCheck::report($e);
+
             return CheckResult::failed(
                 (string) __('alerts::checks.http_unreachable', ['url' => $this->url]),
                 ['url' => $this->url, 'error' => $e->getMessage()],

@@ -33,11 +33,24 @@ final class SafeCheck
                 'timed_out_after' => $e->seconds,
             ]);
         } catch (Throwable $e) {
-            // The exception's message and frames are not stored by default, so the
-            // exception handler (the logs) is their record.
-            Container::getInstance()->make(ExceptionHandler::class)->report($e);
+            self::report($e);
 
             return CheckResult::fromException($e);
         }
+    }
+
+    /**
+     * Hand a throwable a check caught to the exception handler: its message and frames are not
+     * stored by default, so the logs are their record. Used here and by the built-in checks for
+     * the error they catch. A timeout thrown into a check is the package's own condition, stored
+     * with its own text, so it is never reported.
+     */
+    public static function report(Throwable $e): void
+    {
+        if ($e instanceof CheckTimedOut) {
+            return;
+        }
+
+        Container::getInstance()->make(ExceptionHandler::class)->report($e);
     }
 }

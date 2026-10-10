@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Queue;
 use RoundlyConsulting\Alerts\Check;
 use RoundlyConsulting\Alerts\CheckResult;
 use RoundlyConsulting\Alerts\Notifications\HealthCheckFailedNotification;
+use RoundlyConsulting\Alerts\Support\SafeCheck;
 use Throwable;
 
 /**
@@ -58,6 +59,8 @@ final class QueueCheck extends Check
         try {
             $size = Queue::connection($connection)->size($this->queue);
         } catch (Throwable $e) {
+            SafeCheck::report($e);
+
             return CheckResult::failed(
                 (string) __('alerts::checks.queue_unreachable', ['connection' => $connection]),
                 ['connection' => $connection, 'error' => $e->getMessage()],
