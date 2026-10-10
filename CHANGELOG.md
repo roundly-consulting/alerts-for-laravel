@@ -76,8 +76,9 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
   opened under a silence that has since ended reads `false`. The pipeline still writes `muted` into
   the alert's `meta`.
 - `Health::report()` reports `uptime` and `p95LatencyMs` as `null` for a row with no run in the
-  window (or none at all, or with `alerts.history.enabled` off); they used to read `100.0` and `0`,
-  so a check that never ran looked perfect. `HealthCheck::uptimePercentage()` and `p95LatencyMs()`
+  window (or none at all, or with `alerts.history.enabled` off), and the JSON health endpoint's
+  `uptime` / `p95_latency_ms` with them; they used to read `100.0` and `0`, so a check that never
+  ran looked perfect. `HealthCheck::uptimePercentage()` and `p95LatencyMs()`
   keep returning `100.0` and `0` without history.
 - `Health::report()` lists its rows in id order, and builds the whole report in a fixed number of
   queries (at most five) however many rows and runs there are. The p95 is read with a window function, so
@@ -99,6 +100,10 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
   with the newest reason — so what is muted does not change.
 - Maintenance: CI runs the whole suite on MySQL 8 as well as PostgreSQL, the two supported
   databases.
+- Documentation: the report (windows, fixed queries, nullable statistics, silence-based `muted`,
+  `meta`, the roll-up and the cache round-trip), silences (upsert, snapshots, pruning), scheduling
+  identity (`uniqueBy()`, upsert, `reconfigure()`, `ScheduleConflict`), exception details, the 1.2
+  upgrade steps and the MySQL 8.0+ requirement.
 
 ### Fixed
 
