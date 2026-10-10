@@ -140,7 +140,7 @@ final class FakeMonitor
 
         $this->openStatus = $result->status;
         $this->openMessage = $result->storedMessage();
-        $this->openMeta = $muted ? [...$result->meta, MonitorOptions::MUTED => true] : $result->meta;
+        $this->openMeta = $muted ? [...$result->storedMeta(), MonitorOptions::MUTED => true] : $result->storedMeta();
 
         if ($this->failures < $options->failAfter()) {
             return null;

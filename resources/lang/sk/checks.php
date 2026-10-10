@@ -23,4 +23,6 @@ return [
     'http_unreachable' => 'K endpointu [:url] sa nepodarilo pripojiť.',
     'http_bad_status' => 'Endpoint [:url] vrátil stavový kód :status.',
     'http_slow' => 'Endpoint [:url] odpovedal pomaly (:latency ms).',
+
+    'check_errored' => 'Kontrola vyhodila výnimku :exception; podrobnosti sú v aplikačnom logu.',
 ];

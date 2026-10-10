@@ -163,6 +163,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Exception Details
+    |--------------------------------------------------------------------------
+    |
+    | A check that throws fails with the exception's class only: its message
+    | and stack frames — which can carry hosts, SQL and credentials — are not
+    | stored on runs or alerts, nor mailed, and the built-in checks' caught
+    | error is left out too. The throwable is reported to the exception handler
+    | (your logs) instead. The caller of a run-now still gets everything. Turn
+    | this on to store (and mail) the details as before 1.2.
+    |
+    */
+
+    'store_exception_details' => env('ALERTS_STORE_EXCEPTION_DETAILS', false),
+
+    /*
+    |--------------------------------------------------------------------------
     | Escalation
     |--------------------------------------------------------------------------
     |

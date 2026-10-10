@@ -63,7 +63,7 @@ final class StorageCheck extends Check
             return CheckResult::failed(
                 (string) __('alerts::checks.storage_unreadable', ['disk' => $disk]),
                 ['disk' => $disk, 'error' => $e->getMessage()],
-            );
+            )->withSensitiveMeta('error');
         }
 
         if ($free === false) {

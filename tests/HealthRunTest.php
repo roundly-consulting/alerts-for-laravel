@@ -73,6 +73,7 @@ it('reads the overall status via the facade', function () {
 
 it('survives a failure message longer than any varchar column', function () {
     Notification::fake();
+    config()->set('alerts.store_exception_details', true);
 
     $team = Team::create();
     $long = 'SQLSTATE[08006] connection failed: '.str_repeat('x', 5000);

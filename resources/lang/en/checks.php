@@ -23,4 +23,6 @@ return [
     'http_unreachable' => 'Endpoint [:url] could not be reached.',
     'http_bad_status' => 'Endpoint [:url] returned status :status.',
     'http_slow' => 'Endpoint [:url] responded slowly (:latency ms).',
+
+    'check_errored' => 'The check threw :exception; the details are in the application log.',
 ];

@@ -53,7 +53,7 @@ final class CacheCheck extends Check
             return CheckResult::failed(
                 (string) __('alerts::checks.cache_unreachable', ['store' => $store]),
                 ['store' => $store, 'error' => $e->getMessage()],
-            );
+            )->withSensitiveMeta('error');
         }
 
         if ($read !== $sentinel) {

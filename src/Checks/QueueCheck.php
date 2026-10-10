@@ -61,7 +61,7 @@ final class QueueCheck extends Check
             return CheckResult::failed(
                 (string) __('alerts::checks.queue_unreachable', ['connection' => $connection]),
                 ['connection' => $connection, 'error' => $e->getMessage()],
-            );
+            )->withSensitiveMeta('error');
         }
 
         if ($this->maxSize !== null && $size > $this->maxSize) {

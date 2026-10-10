@@ -106,6 +106,19 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
   lookup, two counts and two p95 reads each): the JSON endpoint and `alerts:status` call it on
   every hit.
 
+### Security
+
+- A check that throws no longer stores — or mails — the exception's message and stack frames,
+  which can carry hosts, SQL and credentials. The run and the alert get the message
+  `The check threw RuntimeException; the details are in the application log.` (the new
+  `alerts::checks.check_errored` line, English and Slovak) and keep only `meta.exception` (the
+  class); `exception_message`, `exception_trace` and the `error` a built-in check caught are left
+  out. The throwable is reported to the exception handler instead, so it lands in your logs. A
+  check's own message, the package's timeout text and `timed_out_after` are kept, and the
+  `CheckResult` a run-now returns still carries everything. Opt back in with
+  `alerts.store_exception_details` (`ALERTS_STORE_EXCEPTION_DETAILS=true`, a strict boolean). The
+  new `CheckResult::storedMeta()` returns the meta as stored, next to `storedMessage()`.
+
 ## 1.1.0 - 2026-10-05
 
 ### Added

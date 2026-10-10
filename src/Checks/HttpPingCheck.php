@@ -67,7 +67,7 @@ final class HttpPingCheck extends Check
             return CheckResult::failed(
                 (string) __('alerts::checks.http_unreachable', ['url' => $this->url]),
                 ['url' => $this->url, 'error' => $e->getMessage()],
-            );
+            )->withSensitiveMeta('error');
         }
 
         $elapsedMs = (int) round((microtime(true) - $start) * 1000);

@@ -47,6 +47,7 @@ uses(TestCase::class)->in(
     'Report',
     'Routing',
     'Scheduling',
+    'Security',
     'Silences',
     'Status',
     'Support',

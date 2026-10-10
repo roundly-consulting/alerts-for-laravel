@@ -43,7 +43,7 @@ final class DatabaseCheck extends Check
             return CheckResult::failed(
                 (string) __('alerts::checks.database_unreachable', ['connection' => $connection]),
                 ['connection' => $connection, 'error' => $e->getMessage()],
-            );
+            )->withSensitiveMeta('error');
         }
 
         return CheckResult::ok(

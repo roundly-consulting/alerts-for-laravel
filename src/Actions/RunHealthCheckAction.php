@@ -102,7 +102,7 @@ final readonly class RunHealthCheckAction
             'status' => $result->status,
             'duration_ms' => $durationMs,
             'message' => $result->storedMessage(),
-            'meta' => $result->meta,
+            'meta' => $result->storedMeta(),
             'ran_at' => now(),
         ]);
     }
@@ -279,7 +279,7 @@ final readonly class RunHealthCheckAction
      */
     private function alertMeta(CheckResult $result, bool $muted): array
     {
-        $meta = $result->meta;
+        $meta = $result->storedMeta();
 
         if ($muted) {
             $meta[MonitorOptions::MUTED] = true;
