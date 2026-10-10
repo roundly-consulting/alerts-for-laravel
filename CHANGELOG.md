@@ -6,6 +6,11 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
 
 ## Unreleased
 
+### Changed
+
+- Maintenance: CI runs the whole suite on MySQL 8 as well as PostgreSQL, the two supported
+  databases.
+
 ## 1.1.0 - 2026-10-05
 
 ### Added

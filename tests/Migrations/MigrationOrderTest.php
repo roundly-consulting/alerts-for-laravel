@@ -83,6 +83,22 @@ it('rejects a child-before-parent order on postgres', function () use ($migratio
 })->skip(fn (): bool => ! test()->connectionAvailable('pgsql'), 'no postgres connection available');
 
 /**
+ * MySQL is the other supported engine. InnoDB refuses a foreign key onto a missing table at
+ * DDL time too, so the same pair — the shipped order installs, the reversed one is refused —
+ * runs on the mysql leg.
+ */
+it('applies its migrations on mysql', function () use ($migrations): void {
+    expect($migrations)->toApplyOnConnection('mysql', migrations: 4);
+})->skip(fn (): bool => ! test()->connectionAvailable('mysql'), 'no mysql connection available');
+
+it('rejects a child-before-parent order on mysql', function () use ($migrations): void {
+    expect($migrations)->toRejectBrokenOrderOnConnection(
+        fn (array $files): array => array_reverse($files),
+        'mysql',
+    );
+})->skip(fn (): bool => ! test()->connectionAvailable('mysql'), 'no mysql connection available');
+
+/**
  * The driver-truth pin (Wave 2's lesson). It compares the env-DECLARED driver against what
  * the connection itself answers, so a "pgsql" leg that quietly stayed on SQLite — a
  * decapitated `defineEnvironment()`, a missing `TESTING_DB_DRIVER` — goes red here rather
