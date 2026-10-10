@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Alerts\Support;
 
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use RoundlyConsulting\Alerts\Check;
@@ -40,11 +41,14 @@ final readonly class NotifiableHealth
     }
 
     /**
+     * This notifiable's report: uptime and p95 over the runs since `$since` (default: the
+     * whole retained history), without its on-demand rows when `$scheduledOnly`.
+     *
      * @param  list<string>|null  $tags
      */
-    public function report(?array $tags = null): HealthReport
+    public function report(?array $tags = null, ?CarbonInterface $since = null, bool $scheduledOnly = false): HealthReport
     {
-        return $this->health->reportFor($this->notifiable, $tags);
+        return $this->health->reportFor($this->notifiable, $tags, $since, $scheduledOnly);
     }
 
     /**

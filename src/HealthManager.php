@@ -118,13 +118,15 @@ class HealthManager
 
     /**
      * The current report across every monitored check — scheduled monitors and the
-     * on-demand rows `for($owner)->run()` creates — optionally narrowed by tags.
+     * on-demand rows `for($owner)->run()` creates — optionally narrowed by tags, with uptime
+     * and p95 over the runs since `$since` (default: the whole retained history), and without
+     * the on-demand rows when `$scheduledOnly`. Built in a fixed number of queries.
      *
      * @param  list<string>|null  $tags
      */
-    public function report(?array $tags = null): HealthReport
+    public function report(?array $tags = null, ?CarbonInterface $since = null, bool $scheduledOnly = false): HealthReport
     {
-        return $this->reportFor(null, $tags);
+        return $this->reportFor(null, $tags, $since, $scheduledOnly);
     }
 
     /**
@@ -268,9 +270,13 @@ class HealthManager
      *
      * @param  list<string>|null  $tags
      */
-    public function reportFor(?Model $notifiable, ?array $tags = null): HealthReport
-    {
-        return $this->container->make(BuildHealthReportAction::class)->execute($notifiable, $tags);
+    public function reportFor(
+        ?Model $notifiable,
+        ?array $tags = null,
+        ?CarbonInterface $since = null,
+        bool $scheduledOnly = false,
+    ): HealthReport {
+        return $this->container->make(BuildHealthReportAction::class)->execute($notifiable, $tags, $since, $scheduledOnly);
     }
 
     /**

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Alerts\Testing;
 
+use Carbon\CarbonInterface;
 use RoundlyConsulting\Alerts\CheckResult;
 use RoundlyConsulting\Alerts\Enums\Status;
+use RoundlyConsulting\Alerts\HealthCheck;
 use RoundlyConsulting\Alerts\Status\CheckStatus;
 use RoundlyConsulting\Alerts\Support\MonitorOptions;
 
@@ -27,19 +29,22 @@ final class FakeMonitor
 
     private ?string $openMessage = null;
 
-    private bool $muted = false;
+    /** @var array<string, mixed>|null */
+    private ?array $openMeta = null;
 
-    /** @var list<CheckResult> */
+    /** @var list<array{status: Status, at: CarbonInterface}> */
     private array $results = [];
 
     /**
      * @param  list<string>  $tags
+     * @param  HealthCheck  $row  the row the real manager would have written (unsaved)
      */
     public function __construct(
         public readonly string $key,
         public readonly string $notifiable,
         private string $name,
         private array $tags,
+        public readonly HealthCheck $row,
     ) {}
 
     /**
@@ -59,7 +64,8 @@ final class FakeMonitor
      */
     public function apply(CheckResult $result, MonitorOptions $options, bool $muted): ?bool
     {
-        $this->results[] = $result;
+        // Stamped like a recorded run, so a report window (and `travel()`) applies.
+        $this->results[] = ['status' => $result->status, 'at' => now()];
 
         if ($result->status === Status::Skipped) {
             return null;
@@ -78,7 +84,11 @@ final class FakeMonitor
         return array_intersect($tags, $this->tags) !== [];
     }
 
-    public function status(): CheckStatus
+    /**
+     * The report line: no p95 (the fake records no durations), uptime over the runs since
+     * `$since`, null before any, and `$muted` as the silences decide it.
+     */
+    public function status(?CarbonInterface $since, bool $muted): CheckStatus
     {
         return new CheckStatus(
             key: $this->key,
@@ -86,8 +96,9 @@ final class FakeMonitor
             status: $this->openStatus ?? Status::Ok,
             message: $this->openMessage,
             tags: $this->tags,
-            uptime: $this->uptime(),
-            muted: $this->openStatus !== null && $this->muted,
+            uptime: $this->uptime($since),
+            muted: $muted,
+            meta: $this->openMeta,
         );
     }
 
@@ -102,7 +113,7 @@ final class FakeMonitor
 
         $this->openStatus = null;
         $this->openMessage = null;
-        $this->muted = false;
+        $this->openMeta = null;
         $this->successes = 0;
 
         return $muted ? null : false;
@@ -119,7 +130,7 @@ final class FakeMonitor
 
         $this->openStatus = $result->status;
         $this->openMessage = $result->storedMessage();
-        $this->muted = $muted;
+        $this->openMeta = $muted ? [...$result->meta, MonitorOptions::MUTED => true] : $result->meta;
 
         if ($this->failures < $options->failAfter()) {
             return null;
@@ -129,16 +140,21 @@ final class FakeMonitor
     }
 
     /**
-     * 100.0 for a monitor that has not run yet, as a real row without history reports.
+     * The share of non-alertable runs since `$since`, null when there is none — as the real
+     * report reads a row without runs in its window.
      */
-    private function uptime(): float
+    private function uptime(?CarbonInterface $since): ?float
     {
-        if ($this->results === []) {
-            return 100.0;
+        $results = $since === null
+            ? $this->results
+            : array_filter($this->results, fn (array $result): bool => $result['at']->greaterThanOrEqualTo($since));
+
+        if ($results === []) {
+            return null;
         }
 
-        $healthy = array_filter($this->results, fn (CheckResult $result): bool => ! $result->status->isAlertable());
+        $healthy = array_filter($results, fn (array $result): bool => ! $result['status']->isAlertable());
 
-        return round((count($healthy) / count($this->results)) * 100, 2);
+        return round((count($healthy) / count($results)) * 100, 2);
     }
 }

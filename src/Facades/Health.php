@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\Alerts\Facades;
 
+use Carbon\CarbonInterface;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Routing\Route;
@@ -25,7 +26,7 @@ use RoundlyConsulting\Alerts\Testing\HealthFake;
  * @method static Collection<string, Check> all()
  * @method static Check|null find(string $key)
  * @method static NotifiableHealth for(Model $notifiable)
- * @method static HealthReport report(list<string>|null $tags = null)
+ * @method static HealthReport report(list<string>|null $tags = null, CarbonInterface|null $since = null, bool $scheduledOnly = false)
  * @method static Status status(list<string>|null $tags = null)
  * @method static Silences silences()
  * @method static int runDue()

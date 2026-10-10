@@ -8,6 +8,18 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
 
 ### Added
 
+- `Health::report()` and `Health::for($owner)->report()` take two optional named arguments:
+  `since:` (a moment — only the runs since then count towards `uptime` and `p95LatencyMs`;
+  default: the whole retained history, as before) and `scheduledOnly:` (`true` leaves out the
+  on-demand rows `run()` creates). `status()` is unchanged.
+- `CheckStatus::$meta`: the open alert's raw `meta` (`null` without an open alert), so a host no
+  longer re-queries alerts for it. It can hold exception details — sanitise it before showing it
+  to users. `CheckStatus::toArray()` includes it; the JSON health endpoint never renders it, with
+  or without `alerts.route.details`.
+- `CheckStatus::tryFromArray(mixed $row)` and `HealthReport::tryFromArray(mixed $payload)` read
+  `toArray()` back — for caches that store arrays only (`cache.serializable_classes` off). A
+  payload they cannot read is `null`, a cache miss, never an error; the stored overall `status`
+  is ignored and recomputed.
 - `Health::silences()->snapshot(?CarbonInterface $at = null)` returns a `SilenceSnapshot`: every
   silence in force at that moment, loaded in one query, whose `covers(HealthCheck $row)` tells
   whether a row is muted by the same rule the run pipeline applies (the row's check key, one of
@@ -26,6 +38,21 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
 
 ### Changed
 
+- `Health::report()` (and with it the `muted` flag the JSON health endpoint renders with
+  `alerts.route.details`) now reads `muted` from the silences in force — by the run pipeline's own rule — instead of the
+  open alert's `meta.muted` flag. A muted check with no open alert now reads `true`, and an alert
+  opened under a silence that has since ended reads `false`. The pipeline still writes `muted` into
+  the alert's `meta`.
+- `Health::report()` reports `uptime` and `p95LatencyMs` as `null` for a row with no run in the
+  window (or none at all, or with `alerts.history.enabled` off); they used to read `100.0` and `0`,
+  so a check that never ran looked perfect. `HealthCheck::uptimePercentage()` and `p95LatencyMs()`
+  keep returning `100.0` and `0` without history.
+- `Health::report()` lists its rows in id order, and builds the whole report in a fixed number of
+  queries (at most five) however many rows and runs there are. The p95 is read with a window function, so
+  MySQL 8.0 or later is required (MySQL 5.7 is end-of-life); PostgreSQL and SQLite are unaffected.
+- `Health::fake()`'s report follows the real one: it honours `since:` and `scheduledOnly:`, reads
+  `muted` from its in-memory silences, reports `uptime` as `null` before a monitor's first run, and
+  carries the open alert's meta (its `p95LatencyMs` stays `null`: the fake records no durations).
 - `Health::silences()->mute()` now updates the silence with the same key and scope (global, or
   the same notifiable) instead of inserting another row: muting again replaces its `reason` and
   `ends_at`, so it extends or shortens the window, and returns that one row. A global and a scoped
@@ -40,6 +67,14 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
   create migrations: copy the new migration files into `database/migrations` by hand instead.
 - Maintenance: CI runs the whole suite on MySQL 8 as well as PostgreSQL, the two supported
   databases.
+
+### Fixed
+
+- A skipped check no longer outranks an ok one in `HealthReport::overall()`: a report of ok and
+  skipped checks (or only skipped ones) is `ok`, not `skipped`. `Status::severity()` is unchanged.
+- `Health::report()` no longer runs five queries per row over the whole run history (an open-alert
+  lookup, two counts and two p95 reads each): the JSON endpoint and `alerts:status` call it on
+  every hit.
 
 ## 1.1.0 - 2026-10-05
 

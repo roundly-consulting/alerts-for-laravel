@@ -16,6 +16,32 @@ final readonly class HealthReport
     ) {}
 
     /**
+     * Read back what {@see self::toArray()} wrote. The stored top-level `status` is ignored and
+     * recomputed; a payload it cannot read — or one whose checks it cannot all read — is null,
+     * a cache miss.
+     */
+    public static function tryFromArray(mixed $payload): ?self
+    {
+        if (! is_array($payload) || ! is_array($payload['checks'] ?? null) || ! array_is_list($payload['checks'])) {
+            return null;
+        }
+
+        $checks = [];
+
+        foreach ($payload['checks'] as $row) {
+            $check = CheckStatus::tryFromArray($row);
+
+            if ($check === null) {
+                return null;
+            }
+
+            $checks[] = $check;
+        }
+
+        return new self($checks);
+    }
+
+    /**
      * @return list<CheckStatus>
      */
     public function checks(): array
@@ -35,14 +61,15 @@ final readonly class HealthReport
     }
 
     /**
-     * Worst-status roll-up across every check (Ok when there are none).
+     * Worst-status roll-up across every check (Ok when there are none). A skipped check says
+     * nothing about health, so it never outranks an ok one: an all-skipped report is ok.
      */
     public function overall(): Status
     {
         $overall = Status::Ok;
 
         foreach ($this->checks as $check) {
-            if ($check->status->severity() > $overall->severity()) {
+            if ($check->status !== Status::Skipped && $check->status->severity() > $overall->severity()) {
                 $overall = $check->status;
             }
         }

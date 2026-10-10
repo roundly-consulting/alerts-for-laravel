@@ -44,6 +44,7 @@ uses(TestCase::class)->in(
     'Notifications',
     'Provider',
     'Recovery',
+    'Report',
     'Routing',
     'Silences',
     'Status',

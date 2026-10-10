@@ -146,9 +146,10 @@ final class HealthFake extends HealthManager
 
         $this->runs[] = $key;
 
-        $muted = $this->covered($row ?? $this->onDemandRow($notifiable, $key), $instance);
+        $row ??= $this->onDemandRow($notifiable, $key);
+        $muted = $this->covered($row, $instance);
 
-        $outcome = $this->monitorFor($id, $scope, $key, $instance->name(), $tags)
+        $outcome = $this->monitorFor($id, $scope, $key, $instance->name(), $tags, $row)
             ->apply($result, $options, $muted);
 
         match ($outcome) {
@@ -163,18 +164,28 @@ final class HealthFake extends HealthManager
     /**
      * Built from this fake's monitors — every live schedule, run or not, and every
      * on-demand monitor, each with its open alert, as the real report is — never from the
-     * database.
+     * database. Uptime counts the runs since `$since`; `muted` is decided by the silences in
+     * memory with the runner's rule; there is no p95 (the fake records no durations).
      *
      * @param  list<string>|null  $tags
      */
-    public function reportFor(?Model $notifiable, ?array $tags = null): HealthReport
-    {
+    public function reportFor(
+        ?Model $notifiable,
+        ?array $tags = null,
+        ?CarbonInterface $since = null,
+        bool $scheduledOnly = false,
+    ): HealthReport {
         $scope = $notifiable === null ? null : $this->identify($notifiable);
+        $silences = $this->silenceSnapshotFor(now());
 
         $checks = [];
 
-        foreach ($this->monitors as $monitor) {
+        foreach ($this->monitors as $id => $monitor) {
             if ($scope !== null && $monitor->notifiable !== $scope) {
+                continue;
+            }
+
+            if ($scheduledOnly && ! isset($this->schedules[$id])) {
                 continue;
             }
 
@@ -182,7 +193,7 @@ final class HealthFake extends HealthManager
                 continue;
             }
 
-            $checks[] = $monitor->status();
+            $checks[] = $monitor->status($since, $silences->covers($monitor->row));
         }
 
         return new HealthReport($checks);
@@ -215,7 +226,7 @@ final class HealthFake extends HealthManager
         $id = 'schedule#'.(++$this->scheduled);
 
         $this->schedules[$id] = ['scope' => $scope, 'key' => $key, 'row' => $row];
-        $this->monitors[$id] = new FakeMonitor($key, $scope, $this->find($key)?->name() ?? $key, $row->effectiveTags());
+        $this->monitors[$id] = new FakeMonitor($key, $scope, $this->find($key)?->name() ?? $key, $row->effectiveTags(), $row);
 
         return $row;
     }
@@ -666,9 +677,9 @@ final class HealthFake extends HealthManager
     /**
      * @param  list<string>  $tags
      */
-    private function monitorFor(string $id, string $scope, string $key, string $name, array $tags): FakeMonitor
+    private function monitorFor(string $id, string $scope, string $key, string $name, array $tags, HealthCheck $row): FakeMonitor
     {
-        $monitor = $this->monitors[$id] ??= new FakeMonitor($key, $scope, $name, $tags);
+        $monitor = $this->monitors[$id] ??= new FakeMonitor($key, $scope, $name, $tags, $row);
         $monitor->describe($name, $tags);
 
         return $monitor;

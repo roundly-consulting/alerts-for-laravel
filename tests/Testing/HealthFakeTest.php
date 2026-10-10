@@ -508,7 +508,7 @@ it('gives the real manager\'s outcome under the fake', function (Closure $scenar
                 Health::for($team)->report()->checks(),
             );
         },
-        [['example_health_check', 'ok', ['db'], 100.0]],
+        [['example_health_check', 'ok', ['db'], null]],
     ],
     'unmonitor drops the monitor\'s options' => [
         function (Team $team): array {
