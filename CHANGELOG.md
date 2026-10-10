@@ -6,6 +6,8 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
 
 ## Unreleased
 
+## 1.2.0 - 2026-10-11
+
 ### Added
 
 - `Health::report()` and `Health::for($owner)->report()` take two optional named arguments:
@@ -69,7 +71,10 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
   `add_identity_hash_to_alert_silences_table`). Run `php artisan vendor:publish
   --tag=alerts-migrations` and `php artisan migrate`. If you edited a published alerts migration,
   `vendor:publish` no longer recognises it and would publish a second copy of the create
-  migrations: copy the two new files into `database/migrations` by hand instead.
+  migrations: copy the two new files into `database/migrations` by hand instead. On MySQL, 1.2
+  needs MySQL 8.0 or later. Behaviour changes to check: `report()`'s `muted`, `uptime` and
+  `p95LatencyMs`, `mute()` updating instead of inserting (all below), and a throwing check no
+  longer storing or mailing its exception details (see Security).
 - `Health::report()` (and with it the `muted` flag the JSON health endpoint renders with
   `alerts.route.details`) now reads `muted` from the silences in force — by the run pipeline's own rule — instead of the
   open alert's `meta.muted` flag. A muted check with no open alert now reads `true`, and an alert
