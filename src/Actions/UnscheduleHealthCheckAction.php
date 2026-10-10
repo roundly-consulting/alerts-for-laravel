@@ -35,7 +35,11 @@ final readonly class UnscheduleHealthCheckAction
                 throw InvalidHealthCheck::notScheduledFor($check, $notifiable);
             }
 
-            return $this->stop([$check->getKey()], fn (): int => $check->delete() === true ? 1 : 0);
+            $removed = $this->stop([$check->getKey()], fn (): int => $check->delete() === true ? 1 : 0);
+
+            $check->setAttribute('identity_hash', null)->syncOriginalAttribute('identity_hash');
+
+            return $removed;
         }
 
         $rows = HealthCheckModel::query()
@@ -58,6 +62,13 @@ final readonly class UnscheduleHealthCheckAction
             $deleted = $delete();
 
             if ($ids !== []) {
+                // A removed schedule gives its identity up, so the same thing can be scheduled again.
+                HealthCheckModel::query()
+                    ->withTrashed()
+                    ->whereKey($ids)
+                    ->whereNotNull('identity_hash')
+                    ->update(['identity_hash' => null]);
+
                 AlertModel::query()
                     ->whereIn('health_check_id', $ids)
                     ->whereNull('recovered_at')

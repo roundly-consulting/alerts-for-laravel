@@ -39,6 +39,14 @@ final class InvalidHealthCheck extends Exception
         ));
     }
 
+    /**
+     * The message names the meta key, never its value: a discriminator can be a host name.
+     */
+    public static function invalidIdentity(string $key, string $metaKey): self
+    {
+        return new self("Health check [$key] is unique by meta [$metaKey], which must be a scalar or null.");
+    }
+
     public static function notRegistered(string $key): self
     {
         return new self("No health check is registered for key [$key]. Register it via Health::check().");

@@ -57,6 +57,16 @@ final class FakeMonitor
     }
 
     /**
+     * Start the consecutive-result counters over, as a changed schedule does; an open alert
+     * stays open.
+     */
+    public function resetCounters(): void
+    {
+        $this->failures = 0;
+        $this->successes = 0;
+    }
+
+    /**
      * Apply one run's result exactly as the pipeline would.
      *
      * @return bool|null true when an alert fired, false when a recovery was announced,

@@ -122,6 +122,20 @@ abstract class Check
     }
 
     /**
+     * The identity of a schedule of this check: null (the default) schedules a new row on
+     * every `schedule()`; a list of meta keys makes `schedule()` keep one live schedule per
+     * notifiable, check and value of those keys, updating it in place — `[]` is one per
+     * notifiable and check, `['service']` one per watched service. The values must be scalars
+     * or null (an absent key is null).
+     *
+     * @return list<string>|null
+     */
+    public function uniqueBy(): ?array
+    {
+        return null;
+    }
+
+    /**
      * @return array<string, string>
      */
     public function frequencies(): array

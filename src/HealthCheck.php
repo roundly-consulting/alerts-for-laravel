@@ -35,6 +35,8 @@ use RoundlyConsulting\Alerts\Support\Percentile;
  * @property int $consecutive_successes
  * @property list<string>|null $tags
  * @property array<string, mixed>|null $meta
+ * @property string|null $identity_hash the identity a live schedule of a `uniqueBy()` check is
+ *                                      upserted on; null for every other row
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
  * @property CarbonInterface|null $deleted_at

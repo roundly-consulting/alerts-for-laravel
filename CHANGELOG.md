@@ -33,11 +33,41 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
   never touched; a retention below 1 day throws `InvalidRetention`. The command is scheduled daily
   while `alerts.silence` is on, and `about` shows the retention (`Silences: ON (7 day retention)`).
   The fake records it: `assertSilencesPruned(?int $days = null)` / `assertNoSilencesPruned()`.
+- `Check::uniqueBy(): ?array` (and `Health::define(...)->uniqueBy([...])` for inline checks)
+  declares a schedule's identity: `null` (the default) keeps today's insert-every-time, `[]` keeps
+  one live schedule per notifiable and check, and `['service']` one per notifiable, check and
+  `meta.service`. For such a check, `Health::for($owner)->schedule()` (and `monitor()->save()` and
+  the `UsesHealthChecks` helpers) updates the existing schedule instead of stacking another: its
+  settings are rebuilt from the DTO, only the ones that differ are written (tags compared as sets,
+  `meta` regardless of key order), and the flap counters reset only when one did — an identical
+  re-schedule writes nothing. Audit the outcome with Eloquent's `wasRecentlyCreated`,
+  `wasChanged()`, `getChanges()` and `getPrevious()`. A schedule written before 1.2 is adopted (the
+  oldest matching one) the first time it is scheduled again; `unmonitor()` gives the identity up
+  so the same thing can be scheduled anew. A discriminator value that is not a scalar or null
+  throws `InvalidHealthCheck::invalidIdentity()`.
+- `Health::for($owner)->reconfigure(HealthCheck $row, ReconfigureHealthCheckData $changes)`
+  (`ReconfigureHealthCheckAction`): change a schedule in place. Every
+  `ReconfigureHealthCheckData` setting (`frequency`, `maxAttempts`, `decayMinutes`, `tags`,
+  `failAfter`, `recoverAfter`) left `null` stays; `tags: []` clears them, `failAfter: 1` /
+  `recoverAfter: 1` remove the setting, and `meta` merges key by key (a `null` value removes the
+  key). Same diff rule as `schedule()`: no change is no write and keeps the counters. Another
+  notifiable's row is refused with `InvalidHealthCheck`, and moving a `uniqueBy()` schedule onto
+  the identity of another live schedule throws the new `ScheduleConflict` (a `RuntimeException`
+  naming the check, the row and the identity's meta keys — never their values; map it to 409).
+  The fake records it: `assertReconfigured(string $check, ?Model $notifiable = null)` /
+  `assertNothingReconfigured()`.
+- A new publish-only migration, `add_identity_hash_to_health_checks_table`, adds the unique
+  `health_checks.identity_hash` column a `uniqueBy()` schedule upserts on (no backfill).
 - A new publish-only migration, `add_identity_hash_to_alert_silences_table`, adds the unique
   `alert_silences.identity_hash` column `mute()` upserts on.
 
 ### Changed
 
+- Upgrade: 1.2 ships two new publish-only migrations (`add_identity_hash_to_health_checks_table`,
+  `add_identity_hash_to_alert_silences_table`). Run `php artisan vendor:publish
+  --tag=alerts-migrations` and `php artisan migrate`. If you edited a published alerts migration,
+  `vendor:publish` no longer recognises it and would publish a second copy of the create
+  migrations: copy the two new files into `database/migrations` by hand instead.
 - `Health::report()` (and with it the `muted` flag the JSON health endpoint renders with
   `alerts.route.details`) now reads `muted` from the silences in force — by the run pipeline's own rule — instead of the
   open alert's `meta.muted` flag. A muted check with no open alert now reads `true`, and an alert
@@ -50,6 +80,9 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
 - `Health::report()` lists its rows in id order, and builds the whole report in a fixed number of
   queries (at most five) however many rows and runs there are. The p95 is read with a window function, so
   MySQL 8.0 or later is required (MySQL 5.7 is end-of-life); PostgreSQL and SQLite are unaffected.
+- `Health::fake()` upserts a `uniqueBy()` schedule in memory with the same diff and counter-reset
+  rule, and each later `schedule()` of it returns a fresh copy of the row, as the real manager
+  re-reads it; the rows it returns report `wasRecentlyCreated` / `wasChanged()` like real ones.
 - `Health::fake()`'s report follows the real one: it honours `since:` and `scheduledOnly:`, reads
   `muted` from its in-memory silences, reports `uptime` as `null` before a monitor's first run, and
   carries the open alert's meta (its `p95LatencyMs` stays `null`: the fake records no durations).
@@ -59,12 +92,9 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
   silence of one key stay distinct, and two concurrent mutes still leave one row. A silence a host
   writes straight through the model carries no identity and is never merged. `Health::fake()`
   keeps one in-memory silence per identity the same way (every call is still recorded for
-  `assertMuted()`). Upgrade: run `php artisan vendor:publish --tag=alerts-migrations` and
-  `php artisan migrate`. The migration collapses the immediate silences already stacked per key
+  `assertMuted()`). The new migration collapses the immediate silences already stacked per key
   and scope into one — the newest row, open-ended if any of them was, else until the latest end,
-  with the newest reason — so what is muted does not change. If you edited a published alerts
-  migration, `vendor:publish` no longer recognises it and would publish a second copy of the
-  create migrations: copy the new migration files into `database/migrations` by hand instead.
+  with the newest reason — so what is muted does not change.
 - Maintenance: CI runs the whole suite on MySQL 8 as well as PostgreSQL, the two supported
   databases.
 

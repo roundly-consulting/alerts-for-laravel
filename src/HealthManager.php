@@ -17,12 +17,14 @@ use RoundlyConsulting\Alerts\Actions\BuildHealthReportAction;
 use RoundlyConsulting\Alerts\Actions\MuteAlertsAction;
 use RoundlyConsulting\Alerts\Actions\PruneAlertSilencesAction;
 use RoundlyConsulting\Alerts\Actions\PruneHealthCheckRunsAction;
+use RoundlyConsulting\Alerts\Actions\ReconfigureHealthCheckAction;
 use RoundlyConsulting\Alerts\Actions\RunDueHealthChecksAction;
 use RoundlyConsulting\Alerts\Actions\RunHealthCheckNowAction;
 use RoundlyConsulting\Alerts\Actions\ScheduleHealthCheckAction;
 use RoundlyConsulting\Alerts\Actions\UnmuteAlertsAction;
 use RoundlyConsulting\Alerts\Actions\UnscheduleHealthCheckAction;
 use RoundlyConsulting\Alerts\Checks\ClosureCheck;
+use RoundlyConsulting\Alerts\DataTransferObjects\ReconfigureHealthCheckData;
 use RoundlyConsulting\Alerts\DataTransferObjects\ScheduleHealthCheckData;
 use RoundlyConsulting\Alerts\Enums\Status;
 use RoundlyConsulting\Alerts\Exceptions\InvalidHealthCheck;
@@ -285,6 +287,14 @@ class HealthManager
     public function scheduleFor(Model $notifiable, ScheduleHealthCheckData $data): HealthCheck
     {
         return $this->container->make(ScheduleHealthCheckAction::class)->execute($notifiable, $data);
+    }
+
+    /**
+     * @internal the body of `for($notifiable)->reconfigure()`
+     */
+    public function reconfigureFor(Model $notifiable, HealthCheck $row, ReconfigureHealthCheckData $changes): HealthCheck
+    {
+        return $this->container->make(ReconfigureHealthCheckAction::class)->execute($notifiable, $row, $changes);
     }
 
     /**

@@ -47,7 +47,7 @@ it('never auto-loads its migrations — the host publishes them', function (): v
 });
 
 it('publishes its migrations timestamp-injected into the host', function (): void {
-    expect(AlertsServiceProvider::class)->toPublishMigrationsTimestamped('alerts-migrations', 5);
+    expect(AlertsServiceProvider::class)->toPublishMigrationsTimestamped('alerts-migrations', 6);
 });
 
 /**
@@ -57,7 +57,7 @@ it('publishes its migrations timestamp-injected into the host', function (): voi
  * shipped order install.
  */
 it('applies its migrations on postgres', function () use ($migrations): void {
-    expect($migrations)->toApplyOnConnection('pgsql', migrations: 5);
+    expect($migrations)->toApplyOnConnection('pgsql', migrations: 6);
 })->skip(fn (): bool => ! test()->connectionAvailable('pgsql'), 'no postgres connection available');
 
 /**
@@ -88,7 +88,7 @@ it('rejects a child-before-parent order on postgres', function () use ($migratio
  * runs on the mysql leg.
  */
 it('applies its migrations on mysql', function () use ($migrations): void {
-    expect($migrations)->toApplyOnConnection('mysql', migrations: 5);
+    expect($migrations)->toApplyOnConnection('mysql', migrations: 6);
 })->skip(fn (): bool => ! test()->connectionAvailable('mysql'), 'no mysql connection available');
 
 it('rejects a child-before-parent order on mysql', function () use ($migrations): void {

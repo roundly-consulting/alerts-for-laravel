@@ -80,7 +80,8 @@ it('emits the frozen bigint morph schema byte-for-byte', function (): void {
         .'"health_check" varchar not null, "frequency" varchar, '
         .'"max_attempts" integer not null default \'1\', "decay_minutes" integer not null default \'1\', '
         .'"consecutive_failures" integer not null default \'0\', "consecutive_successes" integer not null default \'0\', '
-        .'"tags" text, "meta" text, "created_at" datetime, "updated_at" datetime, "deleted_at" datetime)'
+        .'"tags" text, "meta" text, "created_at" datetime, "updated_at" datetime, "deleted_at" datetime, '
+        .'"identity_hash" varchar)'
     );
 
     expect(emittedAlertsTable('alerts'))->toBe(

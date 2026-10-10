@@ -55,7 +55,7 @@ it('publishes every migration timestamped, in dependency order', function (): vo
         array_values($published),
     );
 
-    expect($names)->toHaveCount(5);
+    expect($names)->toHaveCount(6);
 
     foreach ($names as $name) {
         expect($name)->toMatch('/^\d{4}_\d{2}_\d{2}_\d{6}_(create|add)_[a-z_]+_table\.php$/');
@@ -72,7 +72,8 @@ it('publishes every migration timestamped, in dependency order', function (): vo
         ->and($names[1])->toContain('create_alerts_table')
         ->and($names[2])->toContain('create_alert_silences_table')
         ->and($names[3])->toContain('create_health_check_runs_table')
-        ->and($names[4])->toContain('add_identity_hash_to_alert_silences_table');
+        ->and($names[4])->toContain('add_identity_hash_to_health_checks_table')
+        ->and($names[5])->toContain('add_identity_hash_to_alert_silences_table');
 });
 
 it('creates the schema when the published migrations are run', function (): void {

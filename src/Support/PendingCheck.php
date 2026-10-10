@@ -43,6 +43,9 @@ final class PendingCheck
     /** @var array<int, string> */
     private array $escalation = [];
 
+    /** @var list<string>|null */
+    private ?array $uniqueBy = null;
+
     public function __construct(
         private readonly HealthManager $health,
         public readonly string $key,
@@ -134,6 +137,27 @@ final class PendingCheck
         $this->escalation = MonitorOptions::validateEscalation($policy);
 
         return $this;
+    }
+
+    /**
+     * Keep one live schedule of this check per notifiable and value of these meta keys
+     * ({@see \RoundlyConsulting\Alerts\Check::uniqueBy()}); null schedules a new row every time.
+     *
+     * @param  list<string>|null  $metaKeys
+     */
+    public function uniqueBy(?array $metaKeys): self
+    {
+        $this->uniqueBy = $metaKeys === null ? null : array_values(array_unique($metaKeys));
+
+        return $this;
+    }
+
+    /**
+     * @return list<string>|null
+     */
+    public function resolvedUniqueBy(): ?array
+    {
+        return $this->uniqueBy;
     }
 
     /**

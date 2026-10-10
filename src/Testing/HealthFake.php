@@ -13,9 +13,11 @@ use RoundlyConsulting\Alerts\AlertSilence;
 use RoundlyConsulting\Alerts\Check;
 use RoundlyConsulting\Alerts\CheckResult;
 use RoundlyConsulting\Alerts\Checks\ClosureCheck;
+use RoundlyConsulting\Alerts\DataTransferObjects\ReconfigureHealthCheckData;
 use RoundlyConsulting\Alerts\DataTransferObjects\ScheduleHealthCheckData;
 use RoundlyConsulting\Alerts\Exceptions\InvalidHealthCheck;
 use RoundlyConsulting\Alerts\Exceptions\InvalidRetention;
+use RoundlyConsulting\Alerts\Exceptions\ScheduleConflict;
 use RoundlyConsulting\Alerts\HealthCheck;
 use RoundlyConsulting\Alerts\HealthManager;
 use RoundlyConsulting\Alerts\Status\HealthReport;
@@ -24,9 +26,11 @@ use RoundlyConsulting\Alerts\Support\AlertSilenceModel;
 use RoundlyConsulting\Alerts\Support\HealthCheckModel;
 use RoundlyConsulting\Alerts\Support\MonitorOptions;
 use RoundlyConsulting\Alerts\Support\SafeCheck;
+use RoundlyConsulting\Alerts\Support\ScheduleState;
 use RoundlyConsulting\Alerts\Support\SilenceMatcher;
 use RoundlyConsulting\Alerts\Support\SilenceSnapshot;
 use RoundlyConsulting\PackageToolkit\Support\Config;
+use WeakMap;
 
 /**
  * Test double for the Health manager, installed by `Health::fake()`. It keeps the
@@ -63,7 +67,7 @@ final class HealthFake extends HealthManager
      * The monitors still scheduled, oldest first — the rows a real `schedule()` would
      * have written and no `unmonitor()` has removed.
      *
-     * @var array<string, array{scope: string, key: string, row: HealthCheck}>
+     * @var array<string, array{scope: string, key: string, row: HealthCheck, identity: string|null}>
      */
     private array $schedules = [];
 
@@ -80,6 +84,17 @@ final class HealthFake extends HealthManager
 
     /** @var list<array{key: string, notifiable: string}> */
     private array $unmonitored = [];
+
+    /** @var list<array{key: string, notifiable: string}> */
+    private array $reconfigured = [];
+
+    /**
+     * Every row instance handed out for a live schedule — the one `schedule()` created and the
+     * fresh copy each later upsert returns — mapped to its schedule.
+     *
+     * @var WeakMap<HealthCheck, string>
+     */
+    private WeakMap $handles;
 
     /** @var list<AlertSilence> */
     private array $silences = [];
@@ -104,6 +119,8 @@ final class HealthFake extends HealthManager
     public function __construct(Container $container, iterable $checks = [])
     {
         parent::__construct($container);
+
+        $this->handles = new WeakMap;
 
         foreach ($checks as $check) {
             $this->register($check);
@@ -201,32 +218,90 @@ final class HealthFake extends HealthManager
 
     /**
      * Records the schedule, keeps it as a live monitor, and returns an unsaved row carrying
-     * what would be stored.
+     * what would be stored. For a check that declares `uniqueBy()` it upserts in memory, with
+     * the real diff and counter-reset rule: the same identity again returns that row, changed
+     * only where the settings differ.
      */
     public function scheduleFor(Model $notifiable, ScheduleHealthCheckData $data): HealthCheck
     {
-        // Validated first, as the real action does: an invalid cron is refused, not recorded.
+        // Validated first, as the real action does: an invalid cron or identity is refused, not recorded.
         $frequency = $data->cronFrequency();
         $key = $data->key();
         $scope = $this->identify($notifiable);
+        $settings = ScheduleState::fromData($data, $frequency);
+        $uniqueBy = ScheduleState::uniqueBy($this, $data->check, $key);
+        $identity = $uniqueBy === null
+            ? null
+            : ScheduleState::identity($notifiable->getMorphClass(), $notifiable->getKey(), $key, $uniqueBy, $data->metaWithOptions());
 
         $this->monitored[] = ['key' => $key, 'notifiable' => $scope];
+
+        $held = $identity === null ? null : $this->scheduleHolding($identity);
+
+        if ($held !== null) {
+            // A fresh copy, as the real holder is a fresh read: only this call's changes count.
+            $row = clone $this->schedules[$held]['row'];
+            $row->wasRecentlyCreated = false;
+            $row->syncChanges();
+            $this->handles[$row] = $held;
+
+            $this->apply($held, ScheduleState::changes($row, $settings), $row);
+
+            return $row;
+        }
 
         $row = HealthCheckModel::new()->forceFill([
             'notifiable_type' => $notifiable->getMorphClass(),
             'notifiable_id' => $notifiable->getKey(),
             'health_check' => $key,
-            'frequency' => $frequency,
-            'max_attempts' => $data->maxAttempts,
-            'decay_minutes' => $data->decayMinutes,
-            'tags' => $data->tags === [] ? null : $data->tags,
-            'meta' => $data->metaWithOptions(),
+            ...$settings,
+            'identity_hash' => $identity,
         ]);
+        $row->syncOriginal();
+        $row->wasRecentlyCreated = true;
 
         $id = 'schedule#'.(++$this->scheduled);
 
-        $this->schedules[$id] = ['scope' => $scope, 'key' => $key, 'row' => $row];
+        $this->schedules[$id] = ['scope' => $scope, 'key' => $key, 'row' => $row, 'identity' => $identity];
+        $this->handles[$row] = $id;
         $this->monitors[$id] = new FakeMonitor($key, $scope, $this->find($key)?->name() ?? $key, $row->effectiveTags(), $row);
+
+        return $row;
+    }
+
+    /**
+     * Records the reconfigure and merges the changes into the row in memory — never the
+     * database — with the real diff, counter-reset and identity rules: another notifiable's row
+     * is refused, and moving onto another schedule's identity throws ScheduleConflict. Neither
+     * refusal is recorded.
+     */
+    public function reconfigureFor(Model $notifiable, HealthCheck $row, ReconfigureHealthCheckData $changes): HealthCheck
+    {
+        if (! $row->isScheduledFor($notifiable)) {
+            throw InvalidHealthCheck::notScheduledFor($row, $notifiable);
+        }
+
+        $settings = ScheduleState::merged($row, $changes);
+        $diff = ScheduleState::changes($row, $settings);
+        $id = $this->scheduleOf($row);
+
+        if ($diff !== [] && $id !== null) {
+            $diff['identity_hash'] = $this->movedIdentity($id, $row, $settings);
+        }
+
+        $this->reconfigured[] = ['key' => $row->health_check, 'notifiable' => $this->identify($notifiable)];
+
+        if ($diff === []) {
+            return $row;
+        }
+
+        if ($id === null) {
+            $row->forceFill($diff)->syncChanges()->syncOriginal();
+
+            return $row;
+        }
+
+        $this->apply($id, $diff, $row);
 
         return $row;
     }
@@ -482,6 +557,24 @@ final class HealthFake extends HealthManager
         PHPUnit::assertSame([], $this->unmonitored, 'Unexpected unschedules were recorded.');
     }
 
+    /**
+     * @param  string  $check  a Check class-string or key
+     */
+    public function assertReconfigured(string $check, ?Model $notifiable = null): void
+    {
+        $key = $this->keyFor($check);
+
+        PHPUnit::assertTrue(
+            $this->recorded($this->reconfigured, $key, $notifiable),
+            "The check [$key] was not reconfigured".$this->against($notifiable).'.',
+        );
+    }
+
+    public function assertNothingReconfigured(): void
+    {
+        PHPUnit::assertSame([], $this->reconfigured, 'Unexpected reconfigurations were recorded.');
+    }
+
     public function assertMuted(string $key, ?Model $notifiable = null): void
     {
         PHPUnit::assertTrue(
@@ -642,17 +735,86 @@ final class HealthFake extends HealthManager
     }
 
     /**
-     * The live monitor a row returned by `schedule()` stands for, or null for any other row.
+     * The live schedule holding an identity, or null.
      */
-    private function scheduleOf(HealthCheck $row): ?string
+    private function scheduleHolding(string $identity): ?string
     {
         foreach ($this->schedules as $id => $schedule) {
-            if ($schedule['row'] === $row) {
+            if ($schedule['identity'] === $identity) {
                 return $id;
             }
         }
 
         return null;
+    }
+
+    /**
+     * Write changed settings into the row instance the caller holds and the schedule's own,
+     * as a save would, and start its counters over; an unchanged schedule is left as it is.
+     *
+     * @param  array<string, mixed>  $changes
+     */
+    private function apply(string $id, array $changes, HealthCheck $handle): void
+    {
+        if ($changes === []) {
+            return;
+        }
+
+        $row = $this->schedules[$id]['row'];
+
+        foreach ($handle === $row ? [$row] : [$handle, $row] as $instance) {
+            $instance->forceFill($changes)->syncChanges()->syncOriginal();
+        }
+
+        $this->monitors[$id]->resetCounters();
+        $this->monitors[$id]->describe($this->find($row->health_check)?->name() ?? $row->health_check, $row->effectiveTags());
+    }
+
+    /**
+     * The identity a reconfigured schedule moves to, refusing one another schedule holds.
+     *
+     * @param  array<string, mixed>  $settings
+     *
+     * @throws ScheduleConflict
+     */
+    private function movedIdentity(string $id, HealthCheck $row, array $settings): ?string
+    {
+        $check = $this->find($row->health_check);
+        $current = $this->schedules[$id]['identity'];
+
+        if ($check === null) {
+            return $current;
+        }
+
+        $uniqueBy = $check->uniqueBy();
+
+        $identity = $uniqueBy === null || $settings['frequency'] === null
+            ? null
+            : ScheduleState::identity(
+                $row->notifiable_type,
+                $row->notifiable_id,
+                $row->health_check,
+                $uniqueBy,
+                is_array($settings['meta']) ? $settings['meta'] : null,
+            );
+
+        if ($identity !== null && $identity !== $current && $this->scheduleHolding($identity) !== null) {
+            throw ScheduleConflict::for($row, $uniqueBy);
+        }
+
+        $this->schedules[$id]['identity'] = $identity;
+
+        return $identity;
+    }
+
+    /**
+     * The live monitor a row returned by `schedule()` stands for, or null for any other row.
+     */
+    private function scheduleOf(HealthCheck $row): ?string
+    {
+        $id = $this->handles[$row] ?? null;
+
+        return $id !== null && isset($this->schedules[$id]) ? $id : null;
     }
 
     /**

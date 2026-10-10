@@ -15,24 +15,31 @@ use RoundlyConsulting\Alerts\Tests\Models\Team;
  * The competitor runs — and commits — from the moment this mute opens its insert transaction,
  * after it has already looked and found nothing: the race, with the interleaving pinned.
  */
-it('keeps one silence when two mutes of the same identity race', function (?bool $scoped): void {
+it('keeps one silence when two mutes of the same identity race', function (bool $scoped, bool $inTransaction): void {
     $team = $scoped ? Team::create() : null;
     $interleaved = false;
+    $connection = AlertSilenceModel::query()->getConnection();
 
-    AlertSilenceModel::query()->getConnection()->beforeStartingTransaction(function () use (&$interleaved, $team): void {
-        if ($interleaved) {
-            return;
-        }
+    $race = function () use (&$interleaved, $team, $connection): AlertSilence {
+        $connection->beforeStartingTransaction(function () use (&$interleaved, $team): void {
+            if ($interleaved) {
+                return;
+            }
 
-        $interleaved = true;
+            $interleaved = true;
 
-        Health::silences()->mute('db', until: now()->addHour(), for: $team, reason: 'competitor');
-    });
+            Health::silences()->mute('db', until: now()->addHour(), for: $team, reason: 'competitor');
+        });
 
-    $silence = Health::silences()->mute('db', until: now()->addHours(2), for: $team, reason: 'winner');
+        return Health::silences()->mute('db', until: now()->addHours(2), for: $team, reason: 'winner');
+    };
+
+    // Inside the caller's transaction the lost insert must roll back to its own savepoint —
+    // on postgres a failed statement otherwise aborts the whole transaction.
+    $silence = $inTransaction ? $connection->transaction($race) : $race();
 
     expect($interleaved)->toBeTrue()
         ->and(AlertSilence::query()->count())->toBe(1)
         ->and($silence->getKey())->toBe(AlertSilence::query()->sole()->getKey())
         ->and(AlertSilence::query()->sole()->reason)->toBe('winner');
-})->with(['global' => false, 'scoped' => true]);
+})->with(['global' => false, 'scoped' => true])->with(['bare' => false, 'inside a transaction' => true]);

@@ -49,6 +49,14 @@ final class ClosureCheck extends Check
     }
 
     /**
+     * @return list<string>|null
+     */
+    public function uniqueBy(): ?array
+    {
+        return $this->pending->resolvedUniqueBy();
+    }
+
+    /**
      * What the definition declares for a row that runs it: the throttle and the monitor
      * options (failAfter/recoverAfter/timeout/routing/escalation). It keeps the on-demand
      * row of `Health::for()->run()` in step and seeds `Health::for()->monitor($key)`.

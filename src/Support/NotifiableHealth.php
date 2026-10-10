@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use RoundlyConsulting\Alerts\Check;
 use RoundlyConsulting\Alerts\CheckResult;
+use RoundlyConsulting\Alerts\DataTransferObjects\ReconfigureHealthCheckData;
 use RoundlyConsulting\Alerts\DataTransferObjects\ScheduleHealthCheckData;
 use RoundlyConsulting\Alerts\Enums\Status;
 use RoundlyConsulting\Alerts\HealthCheck;
@@ -68,11 +69,23 @@ final readonly class NotifiableHealth
     }
 
     /**
-     * Schedule a check from a DTO.
+     * Schedule a check from a DTO. For a check that declares `uniqueBy()`, scheduling the same
+     * identity again updates that schedule (and resets its flap counters only when something
+     * changed) instead of adding another.
      */
     public function schedule(ScheduleHealthCheckData $data): HealthCheck
     {
         return $this->health->scheduleFor($this->notifiable, $data);
+    }
+
+    /**
+     * Change one of this notifiable's schedules in place: null settings stay, `meta` merges key
+     * by key. Another notifiable's row is refused with InvalidHealthCheck; moving onto another
+     * live schedule's identity throws ScheduleConflict.
+     */
+    public function reconfigure(HealthCheck $row, ReconfigureHealthCheckData $changes): HealthCheck
+    {
+        return $this->health->reconfigureFor($this->notifiable, $row, $changes);
     }
 
     /**
