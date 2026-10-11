@@ -6,6 +6,8 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
 
 ## Unreleased
 
+## 1.2.1 - 2026-10-11
+
 ### Changed
 
 - Maintenance: requires the latest roundly packages — package-toolkit `^1.3.0`, enums `^1.1.0`; dev:
