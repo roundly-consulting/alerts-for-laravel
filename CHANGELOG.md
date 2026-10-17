@@ -6,6 +6,10 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
 
 ## Unreleased
 
+### Fixed
+
+- Factories build the configured model when a host swaps it.
+
 ## 1.2.1 - 2026-10-11
 
 ### Changed

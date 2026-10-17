@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\Factory;
 use RoundlyConsulting\Alerts\Alert;
 use RoundlyConsulting\Alerts\Enums\Status;
 use RoundlyConsulting\Alerts\HealthCheck;
+use RoundlyConsulting\Alerts\Support\AlertModel;
 use RoundlyConsulting\Alerts\Support\HealthCheckModel;
 
 /**
@@ -21,6 +22,18 @@ use RoundlyConsulting\Alerts\Support\HealthCheckModel;
 final class AlertFactory extends Factory
 {
     protected $model = Alert::class;
+
+    /**
+     * Build the configured model, not the packaged one: a host that swaps
+     * `alerts.alert` gets its own class, with its casts,
+     * events and observers.
+     *
+     * @return class-string<Alert>
+     */
+    public function modelName(): string
+    {
+        return AlertModel::class();
+    }
 
     /**
      * @return array<string, mixed>

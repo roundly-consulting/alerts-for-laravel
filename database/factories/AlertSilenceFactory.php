@@ -6,6 +6,7 @@ namespace RoundlyConsulting\Alerts\Database\Factories;
 
 use Illuminate\Database\Eloquent\Factories\Factory;
 use RoundlyConsulting\Alerts\AlertSilence;
+use RoundlyConsulting\Alerts\Support\AlertSilenceModel;
 
 /**
  * @extends Factory<AlertSilence>
@@ -13,6 +14,18 @@ use RoundlyConsulting\Alerts\AlertSilence;
 final class AlertSilenceFactory extends Factory
 {
     protected $model = AlertSilence::class;
+
+    /**
+     * Build the configured model, not the packaged one: a host that swaps
+     * `alerts.silence-model` gets its own class, with its casts,
+     * events and observers.
+     *
+     * @return class-string<AlertSilence>
+     */
+    public function modelName(): string
+    {
+        return AlertSilenceModel::class();
+    }
 
     /**
      * @return array<string, mixed>
