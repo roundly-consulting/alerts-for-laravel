@@ -8,7 +8,9 @@ All notable changes to `alerts-for-laravel` are documented in this file. The for
 
 ### Changed
 
-- Maintenance: CI tests PHP 8.5 and 8.6 (8.6 on Laravel 13, with Pest 5).
+- **Breaking:** requires Laravel 13; Laravel 12 is no longer supported. Upgrade the application to Laravel 13 before updating.
+- Requires the 2.x releases of the Roundly packages it builds on (their Laravel 13 releases).
+- Maintenance: tested on PHP 8.4, 8.5 and 8.6; the test suite runs on Pest 5.
 
 ## 1.2.2 - 2026-10-17
 
